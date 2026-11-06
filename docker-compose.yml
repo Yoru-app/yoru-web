@@ -1,0 +1,24 @@
+# Yoru — только сервер приложения. HTTPS и домен настраиваются в вашем Caddy (или другом прокси).
+# Запуск: docker compose up -d --build      Журнал: docker compose logs -f yoru-web-v3
+services:
+  yoru-web-v3:
+    build: .
+    image: yoru-web-v3:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5366
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    # Порт на хосте. По умолчанию только локально (127.0.0.1) — снаружи сайт доступен через ваш прокси.
+    ports:
+      - "${YORU_BIND:-127.0.0.1:5366}:5366"
+    mem_limit: 300m
+    # Если Caddy тоже в Docker, подключите Yoru к его сети и проксируйте на yoru:5365:
+    # networks: [caddy]
+
+# networks:
+#   caddy:
+#     external: true

@@ -1,0 +1,68 @@
+:root {
+  --motion-fast: 130ms;
+  --motion-base: 220ms;
+  --motion-ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+.route-page { animation: route-appear var(--motion-base) var(--motion-ease); }
+@keyframes route-appear {
+  from { opacity: .6; }
+  to { opacity: 1; }
+}
+
+.has-active-indicator { isolation: isolate; }
+.tabs.has-active-indicator, .seg.has-active-indicator, .hnav.has-active-indicator { position: relative; }
+.active-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 12px;
+  background: var(--night-3);
+}
+.active-indicator[hidden] { display: none; }
+.indicator-ready > .active-indicator {
+  transition: transform 280ms var(--motion-ease), width 220ms var(--motion-ease), height 220ms var(--motion-ease);
+}
+.tabs > .active-indicator {
+  border-radius: 10px 10px 0 0;
+  background: rgba(242,181,68,.07);
+  box-shadow: inset 0 -2px var(--lantern);
+}
+.has-active-indicator > .nav-a[aria-current="page"],
+.has-active-indicator > .set-nav-a[aria-current="page"] { background: transparent; }
+.seg.has-active-indicator > button[aria-pressed="true"] { background: transparent; }
+.tabs.has-active-indicator > button::after { display: none; }
+.seg > .active-indicator { background: rgba(242,181,68,.12); }
+
+.nav-a, .set-nav-a, .tabs button, .seg button, .chip, .ep-groups button, .tr, .side-ep {
+  transition: color var(--motion-fast) ease, background-color var(--motion-base) ease,
+    border-color var(--motion-base) ease, opacity var(--motion-fast) ease;
+}
+.btn, .icon-btn, .dd, .chips-more, .more {
+  transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease, color var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+.icon-btn:active, .dd:active, .chips-more:active { transform: scale(.96); }
+.card .poster, .wcard, .ep {
+  transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) ease;
+}
+.prog i, .wide-bar i, .bar i { transition: width 300ms var(--motion-ease); }
+.search input { transition: border-color var(--motion-fast) ease, box-shadow var(--motion-base) ease; }
+.search input:focus { box-shadow: 0 0 0 3px rgba(242,181,68,.08); }
+.tr:active, .ep:active { transform: scale(.98); }
+@media (hover: hover) and (pointer: fine) {
+  .card:hover .poster { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,.2); }
+  .wcard:hover { transform: translateY(-2px); }
+  .ep:hover { transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-page { animation: none; }
+  .indicator-ready > .active-indicator,
+  .nav-a, .set-nav-a, .tabs button, .seg button, .chip, .ep-groups button, .tr, .side-ep,
+  .btn, .icon-btn, .dd, .chips-more, .more, .card .poster, .wcard, .ep,
+  .prog i, .wide-bar i, .bar i, .search input { transition: none; }
+  .card:hover .poster, .wcard:hover, .ep:hover,
+  .icon-btn:active, .dd:active, .chips-more:active, .tr:active, .ep:active { transform: none; }
+}

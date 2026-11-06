@@ -1,0 +1,24 @@
+# /etc/systemd/system/yoru-web-v3.service
+[Unit]
+Description=Yoru v3 (Shikimori + Anime365)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yoru
+WorkingDirectory=/opt/yoru-web-v3
+EnvironmentFile=/etc/yoru-web-v3.env
+ExecStart=/usr/bin/node /opt/yoru-web-v3/server.js
+Restart=always
+RestartSec=3
+# защита: сервис видит только свою папку
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/yoru-web-v3/data
+PrivateTmp=true
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

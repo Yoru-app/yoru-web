@@ -1,0 +1,8 @@
+# /etc/caddy/Caddyfile — Caddy сам получит и будет продлевать сертификат HTTPS
+anime.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:5366 {
+		# видео идёт потоком, не буферизуем
+		flush_interval -1
+	}
+}
