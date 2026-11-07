@@ -2,11 +2,25 @@
 
 ![Yoru — аниме онлайн](public/brand/yoru-banner.png)
 
-**Версия 3.0.0**
-
 Yoru — веб-приложение для поиска и просмотра аниме, которое объединяет каталог и личный список Shikimori с видео Anime365. Вы можете развернуть собственный экземпляр, войти через Shikimori и пользоваться им в браузере на компьютере или телефоне.
 
 Приложение помогает найти тайтл, выбрать озвучку, продолжить начатую серию и отметить просмотренное в своём списке. Сервер хранит историю и позиции просмотра, поэтому к ним можно вернуться с другого устройства, войдя в тот же экземпляр Yoru.
+
+<details>
+  <summary>Снимки экрана /screenshots</summary>
+
+|  |  |
+| --- | --- |
+| Главный экран по умолчанию | С ограничением ширины контейнера |
+| ![](public/brand/screenshots/screen1.png) | ![](public/brand/screenshots/screen2.png) |
+| Страница тайтла | Каталог |
+| ![](public/brand/screenshots/screen3.png) | ![](public/brand/screenshots/screen4.png) |
+| Плеер | Расписание |
+| ![](public/brand/screenshots/screen5.png) | ![](public/brand/screenshots/screen6.png) |
+| Настройки главного экрана | Настройки плеера |
+| ![](public/brand/screenshots/screen7.png) | ![](public/brand/screenshots/screen8.png) |
+
+</details>
 
 ## Возможности
 
