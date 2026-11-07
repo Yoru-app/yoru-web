@@ -55,7 +55,23 @@ export async function renderWatch(aid, eid, host, paint, layout) {
   state.pendingTr = null;
   lib.setCurTr(eid, cur);
   let kind = cur ? kindOf(cur) : 'voice';
-  const siteUrl = (t) => absUrl((t && t.url) || s.url || state.site);
+  const siteUrl = (translation) => {
+    const target = new URL(state.site);
+    // API может прислать абсолютный URL другого зеркала. Оставляем выбранный
+    // администратором домен и переносим только путь страницы, параметры и якорь.
+    for (const candidate of [translation?.url, ep.url, s.url]) {
+      if (!candidate) continue;
+      try {
+        const page = new URL(candidate, target);
+        if (!['http:', 'https:'].includes(page.protocol)) continue;
+        target.pathname = page.pathname;
+        target.search = page.search;
+        target.hash = page.hash;
+        return target.href;
+      } catch { /* пробуем страницу серии или тайтла */ }
+    }
+    return target.href;
+  };
   const watchedN = () => (rateOf(aid) ? rateOf(aid).episodes : 0);
 
   const rendered = await paint({
