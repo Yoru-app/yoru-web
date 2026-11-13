@@ -13,9 +13,11 @@ const links = {
 
 <template>
   <a class="nav-a" :class="{ 'nav-bell': name === 'notifications' }" :href="links[name].href"
-    :data-nav="name" :aria-current="active ? 'page' : undefined" :title="horizontal ? links[name].label : undefined">
+    :data-nav="name" :aria-current="active ? 'page' : undefined"
+    :aria-label="name === 'settings' ? links[name].label : undefined"
+    :title="horizontal || name === 'settings' ? links[name].label : undefined">
     <span class="nav-icon" aria-hidden="true" v-html="links[name].icon"></span>
-    <span class="nav-l">{{ links[name].label }}</span>
+    <span v-if="name !== 'settings'" class="nav-l">{{ links[name].label }}</span>
     <b v-if="name === 'notifications'" class="dot" id="bellCount" :hidden="!unread">{{ unread > 99 ? '99+' : unread }}</b>
   </a>
 </template>

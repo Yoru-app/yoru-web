@@ -86,7 +86,10 @@ onBeforeUnmount(() => {
 <template>
   <main v-content-motion id="view" ref="host" data-page="watch" tabindex="-1">
     <div v-if="error" v-html="errorBlock(error)" @click="(event) => event.target.closest('[data-retry-route]') && refresh()"></div>
-    <div v-else-if="!screen" class="loading"><span class="spin" aria-label="Загрузка"></span></div>
+    <div v-else-if="!screen" class="watch watch-loading" :class="{ 'watch-wide': wide }" role="status">
+      <span class="sr">Загружаем серию</span>
+      <div class="watch-placeholder skel" aria-hidden="true"></div>
+    </div>
     <div v-else class="watch" :class="{ 'watch-wide': wide }">
       <div>
         <div id="vp"></div>
@@ -114,7 +117,8 @@ onBeforeUnmount(() => {
           <p v-else style="margin:0;color:var(--muted)">У этой серии пока нет переводов.</p>
         </div>
       </div>
-      <aside v-show="!wide || episodesOpen" id="watchEpisodes" class="side" aria-label="Список серий">
+      <Transition name="drawer-shift">
+      <aside v-show="!wide || episodesOpen" :inert="wide && !episodesOpen" id="watchEpisodes" class="side" aria-label="Список серий">
         <div class="side-head"><h2>Серии</h2><p>{{ epWord(screen.episodes.length) }}</p>
           <button v-if="wide" class="icon-btn episode-close" type="button" aria-label="Закрыть список серий" @click="closeEpisodes(true)">×</button>
         </div>
@@ -130,6 +134,7 @@ onBeforeUnmount(() => {
           </a>
         </div>
       </aside>
+      </Transition>
     </div>
   </main>
 </template>
@@ -137,6 +142,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .ep-nav [aria-disabled="true"] { opacity: .4; pointer-events: none; }
 .watch { position: relative; width: 100%; }
+.watch-loading .sr { position: absolute; }
+.watch-placeholder { aspect-ratio: 16 / 9; min-width: 0; border-radius: var(--r-lg); }
 .watch:not(.watch-wide) {
   max-width: calc(min(960px, max(480px, (100svh - 180px) * 16 / 9)) + 304px + 2 * var(--pad));
   margin-inline: auto;
@@ -151,15 +158,11 @@ onBeforeUnmount(() => {
   width: min(320px, calc(100% - 2 * var(--pad) - 32px));
   max-height: min(460px, 60svh);
   box-shadow: 0 18px 50px #0009;
-  animation: route-appear var(--motion-base) var(--motion-ease);
 }
 .watch-wide :deep(.vp:not(.fs)) { max-height: 80svh; }
 .side-head { position: relative; }
 .episode-close { position: absolute; right: 12px; top: 12px; width: 30px; height: 30px; font-size: 24px; }
 @media (max-width: 1100px) {
   .watch:not(.watch-wide) { grid-template-columns: minmax(0, 1fr); max-width: 1000px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .watch-wide .side { animation: none; }
 }
 </style>

@@ -1,0 +1,83 @@
+.adm-body { color-scheme: dark; }
+.adm-bar { justify-content: space-between; }
+.adm-bar-actions { display: flex; gap: 8px; align-items: center; }
+.adm-heading { padding-top: 28px; }
+.adm-heading .page-title { font-size: 2rem; }
+.adm-heading .page-sub { font-size: .9375rem; }
+.adm-error {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  margin: 16px auto 0; padding: 10px 14px;
+  width: min(1184px, calc(100% - 2 * var(--pad)));
+  color: var(--rose); border: 1px solid var(--line); border-radius: 12px;
+}
+.adm-error p { margin: 0; }
+.adm-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0; padding: 0; max-width: none;
+  margin: 20px var(--pad) 0;
+  background: var(--night-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.adm-stats div { border: 0; border-radius: 0; background: transparent; min-width: 0; }
+.adm-stats div + div { border-inline-start: 1px solid var(--line); }
+.adm-stats dt { color: var(--muted); font-size: .8125rem; }
+.adm-stats dd { font: 600 1.4rem/1.25 var(--body); margin: 3px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.adm-layout { grid-template-columns: minmax(190px, 228px) minmax(0, 1fr); gap: 18px; padding-top: 18px; }
+.admin-nav { padding: 6px; border: 1px solid var(--line); border-radius: 16px; background: var(--night-2); }
+.admin-nav .set-nav-a { min-height: 48px; padding: 9px 11px; }
+.admin-nav .set-nav-a small { color: var(--muted); }
+.admin-nav .set-nav-a:focus-visible { outline-offset: -2px; }
+.adm-layout .set-card { padding: 20px; border-radius: 16px; min-width: 0; }
+.adm-layout .set-card h2 { font: 700 1.125rem/1.35 var(--body); }
+.adm-layout .set-card h2 + .choice { margin-top: 14px; }
+.adm-layout .set-note { color: var(--muted); }
+.adm-layout .inline-form { align-items: center; }
+.adm-layout .inline-form .input { min-width: min(100%, 180px); }
+#admCapForm #admCap { min-width: 0; max-width: 122px; }
+.adm-layout .copy-line code { overflow-wrap: anywhere; }
+.adm-users { container-type: inline-size; }
+.adm-user {
+  grid-template-columns: 40px minmax(0, 1.15fr) minmax(82px, .65fr) minmax(112px, 1fr) 36px;
+  grid-template-areas: "a w t l m";
+  column-gap: 10px;
+}
+.adm-user > :is(img,.acct-ph) { grid-area: a; width: 40px; height: 40px; }
+.adm-user.is-blocked { opacity: 1; }
+.adm-who { grid-area: w; overflow-wrap: anywhere; }
+.adm-who small, .adm-traffic small { color: var(--muted); }
+.adm-traffic { grid-area: t; justify-content: start; text-align: left; }
+.adm-lvl { grid-area: l; border-radius: 10px; min-height: 40px; }
+.adm-lvl span { white-space: normal; overflow-wrap: anywhere; }
+.adm-more { grid-area: m; width: 36px; height: 36px; }
+@container (max-width: 560px) {
+  .adm-user {
+    grid-template-columns: 40px minmax(0, 1fr) 36px;
+    grid-template-areas: "a w m" ". t t" ". l l";
+    row-gap: 8px;
+  }
+}
+@media (max-width: 980px) {
+  .adm-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .admin-nav {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0; overflow: visible; cursor: auto;
+  }
+  .adm-layout .admin-nav .set-nav-a { width: 100%; border-color: transparent; justify-content: center; border-radius: 10px; }
+}
+@media (max-width: 600px) {
+  .adm-bar { gap: 8px; padding-block: 8px; }
+  .adm-bar .logo { gap: 6px; font-size: .9375rem; }
+  .adm-bar .logo-mark { width: 26px; }
+  .adm-bar-actions .btn { padding: 0 9px; font-size: .75rem; }
+  .adm-heading { padding-top: 18px; }
+  .adm-heading .page-title { font-size: 1.45rem; overflow-wrap: anywhere; }
+  .adm-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adm-stats div { padding: 10px 12px; }
+  .adm-stats div:nth-child(3) { border-inline-start: 0; }
+  .adm-stats div:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .adm-stats dd { font-size: 1.25rem; }
+  .adm-layout .set-card { padding: 14px; }
+  .admin-nav .set-nav-a { flex-direction: column; gap: 4px; padding: 5px 2px; text-align: center; }
+  .admin-nav .set-nav-a b { font-size: .75rem; line-height: 1.2; overflow-wrap: anywhere; }
+}

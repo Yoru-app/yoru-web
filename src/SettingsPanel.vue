@@ -1,10 +1,11 @@
 <script setup>
 import { vContentMotion } from './motion.js';
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
-import ShikimoriDashboard from './ShikimoriDashboard.vue';
+import { defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { prepareSettings, sectionHTML, bindSettings } from '../public/js/views/settings.js';
 import { errorBlock } from '../public/js/core.js';
+import ThemePicker from './ThemePicker.vue';
 
+const ShikimoriDashboard = defineAsyncComponent(() => import('./ShikimoriDashboard.vue'));
 const props = defineProps({ section: { type: String, required: true } });
 const content = shallowRef(sectionHTML(props.section));
 const error = shallowRef(null);
@@ -48,6 +49,7 @@ onBeforeUnmount(() => { mounted = false; sequence++; });
 <template>
   <div v-content-motion ref="panel" class="settings settings-panel" :aria-busy="busy" @click="retry">
     <ShikimoriDashboard v-if="section === 'account'" />
+    <ThemePicker v-if="section === 'appearance'" />
     <div v-if="error" role="alert" v-html="errorBlock(error)"></div>
     <div id="setBody" class="settings-content" v-html="content"></div>
   </div>
@@ -55,12 +57,4 @@ onBeforeUnmount(() => { mounted = false; sequence++; });
 
 <style scoped>
 .settings-content { display: contents; }
-.settings-panel { animation: settings-appear 220ms var(--motion-ease); }
-@keyframes settings-appear {
-  from { opacity: .55; translate: 0 5px; }
-  to { opacity: 1; translate: 0 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .settings-panel { animation: none; }
-}
 </style>

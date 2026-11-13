@@ -28,6 +28,34 @@ export function applyWidth(w = contentWidth()) {
   document.body.style.setProperty('--content-w', w + 'px');
 }
 
+export const BACKGROUND_PATTERNS = [
+  ['dots', 'Точки', 'Мелкие точки с равными промежутками'],
+  ['grid', 'Сетка', 'Тонкие горизонтальные и вертикальные линии'],
+  ['diagonal', 'Диагонали', 'Редкие наклонные линии'],
+  ['diamonds', 'Ромбы', 'Пересекающиеся диагональные линии'],
+  ['crosses', 'Крестики', 'Небольшие крестики в шахматном порядке'],
+];
+
+export function backgroundPrefs() {
+  const selected = store.get('backgroundPattern', 'dots');
+  return {
+    enabled: store.get('patternBackground', store.get('dotBackground', true)) !== false,
+    pattern: BACKGROUND_PATTERNS.some(([id]) => id === selected) ? selected : 'dots',
+    outsideContent: store.get('patternOutsideContent', false) === true,
+  };
+}
+
+export function applyBackground() {
+  const { enabled, pattern, outsideContent } = backgroundPrefs();
+  if (enabled) document.body.dataset.pattern = pattern;
+  else delete document.body.dataset.pattern;
+  document.body.classList.toggle('pattern-outside-content', enabled && outsideContent);
+}
+
+export function applyMetadataIcons() {
+  document.body.classList.toggle('metadata-icons-off', store.get('metadataIcons', true) === false);
+}
+
 export function applyMenu() {
   document.body.classList.toggle('nav-nolabels', store.get('navLabels', false) === false);
   applyWidth();

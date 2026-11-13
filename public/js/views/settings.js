@@ -5,7 +5,7 @@ import { api365, token, lib } from '../api365.js';
 import { HOME_ROWS, HERO_SOURCES, ROW_MODES, rowMode, heroLook, homePrefs, dupRow, setRowVisible, orderedHomeRows, moveHomeRow } from './home.js';
 import { openModal } from '../ui.js';
 import { FITS, ALIGNS, bannerLook } from '../fitart.js';
-import { applyMenu, applyWidth, WIDTHS, WIDTH_MIN, WIDTH_MAX, contentWidth } from '../menu.js';
+import { applyBackground, applyMetadataIcons, applyMenu, applyWidth, BACKGROUND_PATTERNS, backgroundPrefs, WIDTHS, WIDTH_MIN, WIDTH_MAX, contentWidth } from '../menu.js';
 const isCustomWidth = () => store.get('contentWidthMode', '') === 'custom'
   || (contentWidth() !== 'full' && !WIDTHS.some(([key]) => key === contentWidth()));
 const widthOptions = [...WIDTHS, ['custom', 'Своё', 'Выберите ширину ползунком']];
@@ -21,12 +21,17 @@ export const CHRONO_MODES = [
   ['seasons_movies', 'Сезоны и фильмы', 'Сезоны плюс полнометражные фильмы'],
   ['all', 'Вся хронология', 'Все части франшизы: OVA, спешлы, рекапы, клипы'],
 ];
+const CHRONO_LAYOUTS = [
+  ['horizontal', 'Горизонтально', 'Одна прокручиваемая строка'],
+  ['vertical', 'Вертикально', 'Карточки друг под другом на широком экране'],
+];
 
 async function refreshMe() {
   try { const r = await fetch('/me', { cache: 'no-store' }); if (r.ok) state.me = await r.json(); } catch { /* офлайн */ }
 }
 
 export const settingsIcons = {
+  appearance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v4m8 2v4m-6 2v4"/></svg>',
   account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="14" width="8" height="6" rx="1.5"/><rect x="13" y="14" width="8" height="6" rx="1.5"/></svg>',
   anime: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>',
@@ -35,8 +40,9 @@ export const settingsIcons = {
 };
 export const SET_SECTIONS = [
   ['account', 'Аккаунт', 'Shikimori, Anime365'],
-  ['home', 'Главный экран', 'Меню, ширина, большой блок, ряды'],
-  ['anime', 'Аниме', 'Страница тайтла, баннеры, обложки'],
+  ['appearance', 'Внешний вид', 'Тема, меню, фон и обложки'],
+  ['home', 'Главный экран', 'Большой блок и ряды'],
+  ['anime', 'Страница тайтла', 'Нумерация и вид хронологии'],
   ['player', 'Плеер', 'Воспроизведение, озвучка, субтитры'],
   ['data', 'Данные', 'Продолжить просмотр, история, кэш'],
 ];
@@ -53,8 +59,8 @@ const on = (sel, ev, fn) => { const el = $(sel); if (el) el[ev] = fn; };
 const radios = (name, fn) => $$(`input[name="${name}"]`).forEach((r) => r.onchange = () => fn(r.value));
 const helpHTML = (id, description) => description ? `<span class="choice-help"><button class="choice-help-button" type="button" aria-label="Описание варианта" aria-describedby="${id}">i</button><span class="choice-tooltip" id="${id}" role="tooltip">${esc(description)}</span></span>` : '';
 const choice = (name, items, val, cls = 'choice') => `<div class="${cls}" role="radiogroup">${items.map(([v, t, d, off]) =>
-  `<div class="choice-item${off ? ' is-off' : ''}"><label class="choice-label"><input type="radio" name="${name}" value="${v}" ${val === v ? 'checked' : ''} ${off ? 'disabled' : ''}><span><b>${t}</b></span></label>${helpHTML(`help-${name}-${v}`, d)}</div>`).join('')}</div>`;
-const toggle = (id, title, sub, val) => `<label class="row-line"><span>${title}${sub ? `<small>${sub}</small>` : ''}</span><input class="toggle" type="checkbox" id="${id}" ${val ? 'checked' : ''}></label>`;
+  `<div class="choice-item${off ? ' is-off' : ''}"><label class="choice-label"><input type="radio" name="${name}" value="${v}" ${val === v ? 'checked' : ''} ${off ? 'disabled' : ''} ${d ? `aria-describedby="help-${name}-${v}"` : ''}><span><b>${t}</b></span></label>${helpHTML(`help-${name}-${v}`, d)}</div>`).join('')}</div>`;
+const toggle = (id, title, sub, val) => `<label class="row-line setting-toggle"><span><b id="${id}Label">${title}</b>${sub ? `<small id="${id}Help">${sub}</small>` : ''}</span><input class="toggle" type="checkbox" id="${id}" aria-labelledby="${id}Label" ${sub ? `aria-describedby="${id}Help"` : ''} ${val ? 'checked' : ''}></label>`;
 
 const SECTION_HTML = {
   /* ---------- Аккаунт: Shikimori и Anime365 ---------- */
@@ -96,18 +102,17 @@ const SECTION_HTML = {
       </details>`;
   },
 
-  /* ---------- Главный экран: меню, большой блок, ряды ---------- */
-  home() {
-    const prefs = homePrefs();
-    const look = heroLook();
+  appearance() {
     const me = state.me || {};
+    const bl = bannerLook();
+    const background = backgroundPrefs();
     return `
       <section class="set-card">
         <h2>Меню и ширина</h2>
         <p class="set-lead">Где показывать разделы Yoru. На телефоне меню всегда внизу экрана.</p>
         ${choice('menuMode', MENU_MODES.map(([v, t, d]) => [v, `<span class="menu-pic menu-pic-${v}" aria-hidden="true"><i></i><i></i><i></i></span>${t}`, d]), store.get('menu', 'h'), 'choice choice-row menu-choice')}
         <h3>Ширина содержимого</h3>
-        <p class="set-note" style="margin-top:0">На широком мониторе содержимое можно собрать в колонку по центру. Баннеры и фоны всё равно остаются во всю ширину; если экран уже выбранной ширины, ничего не меняется.</p>
+        <p class="set-note" style="margin-top:0">На широком мониторе содержимое можно собрать в колонку по центру. Баннеры занимают всю ширину окна.</p>
         ${choice('contentWidth', widthOptions, isCustomWidth() ? 'custom' : contentWidth(), 'choice width-choice')}
         <label class="width-slider${isCustomWidth() ? ' is-on' : ''}" id="widthSlider"><span>Своя ширина</span>
           <input type="range" id="widthRange" min="${WIDTH_MIN}" max="${WIDTH_MAX}" step="20" value="${customWidth()}" ${isCustomWidth() ? '' : 'disabled'} aria-label="Своя ширина содержимого, пикселей">
@@ -115,41 +120,22 @@ const SECTION_HTML = {
         ${toggle('setNavLabels', 'Подписи пунктов на телефоне', 'Выключите, чтобы в нижнем меню остались только значки — оно станет ниже', store.get('navLabels', false) !== false)}
       </section>
       <section class="set-card">
-        <h2>Большой блок</h2>
-        ${toggle('setHeroOn', 'Показывать большой блок наверху', 'Баннер с тайтлом и полоской других тайтлов под ним', prefs.heroOn)}
-        <h3>Что в нём показывать</h3>
-        ${choice('hero', HERO_SOURCES.map(([key, title, description]) => [key, title, description, !prefs.heroOn]), prefs.hero, 'choice width-choice hero-source-choice')}
-        <p class="set-note">По умолчанию — «Сейчас на экранах». Если выбранный ряд пуст, здесь появятся популярные онгоинги.</p>
-        <p class="set-note">Как показывать баннер на широком экране (растягивать или размывать края) — общая настройка с шапкой тайтла: <a href="#settings/anime">Аниме → Баннеры</a>.</p>
-        <h3>Название</h3>
-        ${toggle('setHeroLogo', 'Логотип вместо названия', me.tmdb ? 'Картинка с названием, как в плеере. Само название становится маленькой строкой под ней. Если логотипа у тайтла нет — обычное название' : 'Нужен ключ TMDB — его указывает администратор Yoru', look.logo)}
+        <h2>Фон</h2>
+        ${toggle('setPatternBackground', 'Паттерн фон', 'Едва заметный узор на фоне страниц', background.enabled)}
+        <div id="patternSettings" ${background.enabled ? '' : 'hidden'}>
+          <h3>Узор</h3>
+          ${choice('backgroundPattern', BACKGROUND_PATTERNS.map(([id, title, description]) =>
+            [id, `<span class="pattern-preview" data-pattern="${id}" aria-hidden="true"></span>${title}`, description]),
+          background.pattern, 'choice pattern-choice')}
+          <div id="patternWidthSetting" ${contentWidth() === 'full' ? 'hidden' : ''}>
+            ${toggle('setPatternOutsideContent', 'Игнорировать область контейнера', 'Сплошной фон под содержимым, узор по бокам', background.outsideContent)}
+          </div>
+        </div>
       </section>
       <section class="set-card">
-        <h2>Ряды</h2>
-        <h3>Как показывать</h3>
-        ${choice('rowsMode', ROW_MODES, rowMode())}
-        <h3>Порядок и видимость</h3>
-        <p class="set-note" style="margin-top:0">Перемещайте ряды стрелками или перетаскивайте за ручку со стрелками во все стороны. Порядок сохраняется автоматически. Большой блок всегда остаётся наверху.</p>
-        <div id="rowsBox">${rowsHTML(prefs)}</div>
-      </section>`;
-  },
-
-  /* ---------- Аниме: страница тайтла, баннеры, обложки ---------- */
-  anime() {
-    const me = state.me || {};
-    const bl = bannerLook();
-    return `
-      <section class="set-card">
-        <h2>Шапка страницы тайтла</h2>
-        <p class="set-note" style="margin-top:0">Баннер в шапке показывается так же, как в большом блоке на главной — настройка ниже, в «Баннерах».</p>
-        <h3>Название</h3>
-        ${toggle('setTitleLogo', 'Логотип вместо названия', me.tmdb ? 'Картинка с названием с TMDB, само название — строкой под ней. Если логотипа нет — обычное название' : 'Нужен ключ TMDB — его указывает администратор Yoru', !!me.tmdb && store.get('titleLogo', true) !== false)}
-      </section>
-      <section class="set-card">
-        <h2>Номер в хронологии</h2>
-        <p class="set-lead">Как считать номер на постере («Сезон 2 из 4»). Вкладка «Хронология» показывает всё, но отмечает части, которые учитываются.</p>
-        ${choice('chronoMode', CHRONO_MODES, store.get('chronoMode', 'seasons_movies'))}
-        <p class="set-note">Спин-оффы-сериалы Shikimori помечает так же, как обычные сезоны, поэтому отсеять их по типу нельзя: они попадут в счёт в любом режиме, кроме случаев, когда это OVA или фильм.</p>
+        <h2>Детали интерфейса</h2>
+        ${toggle('setMetadataIcons', 'Показывать иконки', 'В списках и у типа тайтла вместо выключенных иконок останутся цветные точки. Иконка оценки отображается всегда.', store.get('metadataIcons', true) !== false)}
+        ${toggle('setTitleLogo', 'Логотип на странице тайтла', me.tmdb ? 'Показывать логотип из TMDB над названием, если он доступен.' : 'Нужен ключ TMDB — его указывает администратор Yoru', !!me.tmdb && store.get('titleLogo', true) !== false)}
       </section>
       <section class="set-card">
         <h2>Баннеры</h2>
@@ -171,6 +157,45 @@ const SECTION_HTML = {
       </section>`;
   },
 
+  home() {
+    const prefs = homePrefs();
+    const look = heroLook();
+    const me = state.me || {};
+    return `
+      <section class="set-card">
+        <h2>Большой блок</h2>
+        ${toggle('setHeroOn', 'Показывать большой блок наверху', 'Баннер с тайтлом и полоской других тайтлов под ним', prefs.heroOn)}
+        <h3>Что в нём показывать</h3>
+        ${choice('hero', HERO_SOURCES.map(([key, title, description]) => [key, title, description, !prefs.heroOn]), prefs.hero, 'choice width-choice hero-source-choice')}
+        <p class="set-note">По умолчанию — «Сейчас на экранах». Если выбранный ряд пуст, здесь появятся популярные онгоинги.</p>
+        <p class="set-note">Как показывать баннер на широком экране (растягивать или размывать края) — общая настройка с шапкой тайтла: <a href="#settings/appearance">Внешний вид → Баннеры</a>.</p>
+        <h3>Название</h3>
+        ${toggle('setHeroLogo', 'Логотип вместо названия', me.tmdb ? 'Картинка с названием, как в плеере. Само название становится маленькой строкой под ней. Если логотипа у тайтла нет — обычное название' : 'Нужен ключ TMDB — его указывает администратор Yoru', look.logo)}
+      </section>
+      <section class="set-card">
+        <h2>Ряды</h2>
+        <h3>Как показывать</h3>
+        ${choice('rowsMode', ROW_MODES, rowMode())}
+        <h3>Порядок и видимость</h3>
+        <p class="set-note" style="margin-top:0">Перемещайте ряды стрелками или перетаскивайте за ручку со стрелками во все стороны. Порядок сохраняется автоматически. Большой блок всегда остаётся наверху.</p>
+        <div id="rowsBox">${rowsHTML(prefs)}</div>
+      </section>`;
+  },
+
+  anime() {
+    return `
+      <section class="set-card">
+        <h2>Номер в хронологии</h2>
+        <p class="set-lead">Как считать номер на постере («Сезон 2 из 4»). Вкладка «Хронология» показывает всё, но отмечает части, которые учитываются.</p>
+        ${choice('chronoMode', CHRONO_MODES, store.get('chronoMode', 'seasons_movies'))}
+        <p class="set-note">Спин-оффы-сериалы Shikimori помечает так же, как обычные сезоны, поэтому отсеять их по типу нельзя: они попадут в счёт в любом режиме, кроме случаев, когда это OVA или фильм.</p>
+      </section>
+      <section class="set-card">
+        <h2>Вид хронологии</h2>
+        ${choice('chronoLayout', CHRONO_LAYOUTS, store.get('chronoLayout', 'horizontal'))}
+      </section>`;
+  },
+
   /* ---------- Плеер: воспроизведение, озвучка и субтитры ---------- */
   player() {
     return `
@@ -184,7 +209,7 @@ const SECTION_HTML = {
       <section class="set-card" id="setTr">
         <h2>Озвучка и субтитры</h2>
         ${toggle('setUnnamedTranslations', 'Показывать переводы без названия', 'Добавлять в списки выбора переводы, у которых не указана команда. Настройка сохраняется в этом браузере', store.get('showUnnamedTranslations', false) === true)}
-        <p class="set-lead">Yoru запоминает, с какими переводами вы досматриваете серии, и при открытии тайтла сам выбирает самый любимый из доступных. Состав дублёров в скобках не разделяет одну команду на разные озвучки: все варианты Dream Cast считаются одним переводом. Перевод, выбранный вручную для тайтла, важнее. Всё это общее для ваших устройств.</p>
+        <p class="set-lead">Yoru запоминает переводы, с которыми вы досматриваете серии. Варианты одной команды, например Dream Cast с разными дублёрами, считаются одним переводом. Ручной выбор для тайтла имеет приоритет. Эти предпочтения доступны на всех ваших устройствах.</p>
         <h3>Если любимых переводов у серии нет</h3>
         ${choice('trKind', [['auto', 'Без разницы', 'Сначала озвучка'], ['voice', 'Озвучка', 'Если есть'], ['sub', 'Субтитры', 'Если есть']], store.get('trKind', 'auto'), 'choice choice-row')}
         <h3>Ваши переводы</h3>
@@ -199,12 +224,12 @@ const SECTION_HTML = {
       <section class="set-card">
         <h2>Продолжить просмотр</h2>
         <p class="set-lead">Тайтлы, которые вы начали смотреть. Открытые случайно можно убрать — они пропадут из «Продолжить просмотр» на всех ваших устройствах. Список Shikimori не меняется.</p>
-        <label class="row-line"><span>В списке<small id="contCount">${n ? `${n} ${tPlural(n)}` : 'Пусто'}</small></span><button class="btn ghost small" type="button" id="openCont" ${n ? '' : 'disabled'}>Выбрать, что убрать</button></label>
-        <label class="row-line"><span>Вся история и позиции просмотра<small>Очищается на всех устройствах</small></span><button class="btn ghost small" type="button" id="clearHist" ${n ? '' : 'disabled'}>Очистить всё</button></label>
+        <div class="row-line setting-action"><span><b>В списке</b><small id="contCount">${n ? `${n} ${tPlural(n)}` : 'Пусто'}</small></span><button class="btn ghost small" type="button" id="openCont" ${n ? '' : 'disabled'}>Выбрать, что убрать</button></div>
+        <div class="row-line setting-action"><span><b>Вся история и позиции просмотра</b><small>Очищается на всех устройствах</small></span><button class="btn ghost small danger" type="button" id="clearHist" ${n ? '' : 'disabled'}>Очистить всё</button></div>
       </section>
       <section class="set-card">
         <h2>Этот браузер</h2>
-        <label class="row-line"><span>Кэш сопоставлений и рекомендаций<small>Если тайтл не находится на Anime365, хотя он там есть</small></span><button class="btn ghost small" type="button" id="clearCache">Очистить</button></label>
+        <div class="row-line setting-action"><span><b>Кэш сопоставлений и рекомендаций</b><small>Если тайтл не находится на Anime365, хотя он там есть</small></span><button class="btn ghost small" type="button" id="clearCache">Очистить</button></div>
         <p class="set-note">Аккаунт, токен Anime365, места в сериях, озвучка и любимые переводы хранятся на сервере Yoru и одинаковы на всех устройствах. Остальные настройки — в этом браузере.</p>
       </section>`;
   },
@@ -240,7 +265,7 @@ const SECTION_BIND = {
       tc.disabled = false;
     };
   },
-  home() {
+  appearance() {
     radios('menuMode', (v) => { store.set('menu', v); applyMenu(); toast(v === 'h' ? 'Меню теперь сверху' : 'Меню теперь слева'); });
     const syncWidthUI = (v) => {
       const custom = isCustomWidth();
@@ -248,6 +273,7 @@ const SECTION_BIND = {
       $('#widthSlider').classList.toggle('is-on', custom);
       $('#widthRange').disabled = !custom;
       $('#widthOut').textContent = v === 'full' ? 'выкл.' : `${v} px`;
+      $('#patternWidthSetting').hidden = v === 'full';
     };
     radios('contentWidth', (v) => {
       const custom = v === 'custom';
@@ -274,6 +300,25 @@ const SECTION_BIND = {
       toast(`Содержимое не шире ${wr.value} px`);
     };
     on('#setNavLabels', 'onchange', (e) => { store.set('navLabels', e.target.checked); applyMenu(); });
+    on('#setPatternBackground', 'onchange', (e) => {
+      store.set('patternBackground', e.target.checked);
+      $('#patternSettings').hidden = !e.target.checked;
+      applyBackground();
+    });
+    radios('backgroundPattern', (pattern) => { store.set('backgroundPattern', pattern); applyBackground(); });
+    on('#setPatternOutsideContent', 'onchange', (e) => {
+      store.set('patternOutsideContent', e.target.checked);
+      applyBackground();
+    });
+    on('#setMetadataIcons', 'onchange', (e) => { store.set('metadataIcons', e.target.checked); applyMetadataIcons(); });
+    radios('bannerFit', (v) => { store.set('bannerFit', v); $('#bannerAlignBox').hidden = v !== 'blur'; toast(v === 'blur' ? 'Края баннера размываются' : 'Баннер растягивается'); });
+    radios('bannerAlign', (v) => { store.set('bannerAlign', v); toast(v === 'right' ? 'Картинка у правого края' : 'Картинка по центру'); });
+    const tlg = $('#setTitleLogo');
+    if (tlg) { if (!(state.me && state.me.tmdb)) { tlg.disabled = true; tlg.closest('.row-line').classList.add('is-off'); } tlg.onchange = (e) => store.set('titleLogo', e.target.checked); }
+    radios('bannerSrc', (v) => { store.set('bannerSource', v); toast('Источник баннеров сохранён'); });
+    radios('coverSrc', (v) => { store.set('coverSource', v); toast('Источник обложек сохранён'); });
+  },
+  home() {
     const hl = $('#setHeroLogo');
     if (hl) { if (!(state.me && state.me.tmdb)) { hl.disabled = true; hl.closest('.row-line').classList.add('is-off'); } hl.onchange = (e) => store.set('heroLogo', e.target.checked); }
     on('#setHeroOn', 'onchange', (e) => {
@@ -294,13 +339,8 @@ const SECTION_BIND = {
     bindRows();
   },
   anime() {
-    radios('bannerFit', (v) => { store.set('bannerFit', v); $('#bannerAlignBox').hidden = v !== 'blur'; toast(v === 'blur' ? 'Края баннера размываются' : 'Баннер растягивается'); });
-    radios('bannerAlign', (v) => { store.set('bannerAlign', v); toast(v === 'right' ? 'Картинка у правого края' : 'Картинка по центру'); });
-    const tlg = $('#setTitleLogo');
-    if (tlg) { if (!(state.me && state.me.tmdb)) { tlg.disabled = true; tlg.closest('.row-line').classList.add('is-off'); } tlg.onchange = (e) => store.set('titleLogo', e.target.checked); }
     radios('chronoMode', (v) => { store.set('chronoMode', v); toast('Номер в хронологии обновлён'); });
-    radios('bannerSrc', (v) => { store.set('bannerSource', v); toast('Источник баннеров сохранён'); });
-    radios('coverSrc', (v) => { store.set('coverSource', v); toast('Источник обложек сохранён'); });
+    radios('chronoLayout', (v) => { store.set('chronoLayout', v); toast('Вид хронологии сохранён'); });
   },
   player() {
     on('#setAutoplay', 'onchange', (e) => store.set('autoplay', e.target.checked));
@@ -473,8 +513,10 @@ function drawRank() {
   box.innerHTML = list.map(([k, r], i) => `<li${r.pinned ? ' class="pinned"' : ''}>
     <span class="tr-rank-n">${i + 1}</span>
     <span class="tr-rank-name"><b>${esc(r.author)}</b><small>${KIND_RU[r.kind] || ''}, ${Math.max(1, Math.floor(r.count))} ${plural(Math.max(1, Math.floor(r.count)))}</small></span>
-    <button class="btn ghost small" type="button" data-pin="${esc(k)}">${r.pinned ? 'Открепить' : 'Закрепить первым'}</button>
-    <button class="btn ghost small" type="button" data-del="${esc(k)}" aria-label="Забыть ${esc(r.author)}">Забыть</button></li>`).join('');
+    <span class="tr-rank-actions">
+      <button class="btn ghost small" type="button" data-pin="${esc(k)}">${r.pinned ? 'Открепить' : 'Закрепить первым'}</button>
+      <button class="btn ghost small" type="button" data-del="${esc(k)}" aria-label="Забыть ${esc(r.author)}">Забыть</button>
+    </span></li>`).join('');
   $$('[data-pin]', box).forEach((b) => b.onclick = () => {
     lib.updateRank((all, now) => {
       const r = all[b.dataset.pin];

@@ -1,4 +1,5 @@
 // Общие утилиты, состояние, хранилище.
+import { surfaceMotion } from './interface-motion.js';
 
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -104,9 +105,19 @@ export function toast(text, action) {
   const el = document.createElement('div');
   el.className = 'toast';
   el.innerHTML = `<span>${esc(text)}</span>${action ? `<button type="button">${esc(action.label)}</button>` : ''}`;
-  if (action) el.querySelector('button').onclick = () => { action.run(); el.remove(); };
+  const dismiss = () => {
+    clearTimeout(timer);
+    el.inert = true;
+    surfaceMotion(el, false, { offset: 5, done: () => el.remove() });
+  };
+  if (action) el.querySelector('button').onclick = () => {
+    if (el.inert) return;
+    dismiss();
+    action.run();
+  };
   $('#toasts').append(el);
-  setTimeout(() => el.remove(), action ? 6000 : 2800);
+  surfaceMotion(el, true, { offset: 9 });
+  const timer = setTimeout(dismiss, action ? 6000 : 2800);
 }
 
 export const loadingBlock = () => '<div class="loading"><span class="spin" aria-label="Загрузка"></span></div>';

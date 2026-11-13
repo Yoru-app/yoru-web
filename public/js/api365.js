@@ -209,6 +209,10 @@ function groupRank(raw) {
 export const trKind = (t) => (['voice', 'sub', 'raw'].includes(t.typeKind) ? t.typeKind : String(t.type || '').startsWith('voice') ? 'voice' : String(t.type || '').startsWith('sub') ? 'sub' : 'raw');
 export const lib = {
   history: () => store.get('history2', []),
+  continueHistory() {
+    const progress = lib.progress();
+    return lib.history().filter(({ eid }) => progress[eid]?.t >= 120);
+  },
   pushHistory(anime, ep) {
     const h = lib.history().filter((x) => x.aid !== anime.id);
     h.unshift({ aid: anime.id, eid: ep.id, ep: epLabel(ep), n: epNum(ep), anime: { id: anime.id, title: anime.title, name: anime.name, poster: anime.poster, posterBig: anime.posterBig, kind: anime.kind, episodes: anime.episodes, year: anime.year }, at: Date.now() });

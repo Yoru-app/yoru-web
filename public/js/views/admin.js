@@ -14,13 +14,13 @@ const ago = (ms) => (ms ? relTime(new Date(ms).toISOString()) : 'ещё не з�
 let S = null;
 
 export async function renderAdmin() {
-  navApp?.unmount();
-  navApp = null;
-  view().innerHTML = loadingBlock();
+  if (!S) view().innerHTML = loadingBlock();
   const r = await fetch('/admin/state', { cache: 'no-store' });
   if (r.status === 401) { location.reload(); return; }
   if (!r.ok) throw new Error('Не удалось загрузить данные администратора');
-  S = await r.json();
+  const next = await r.json();
+  if (S && JSON.stringify(S) === JSON.stringify(next)) return;
+  S = next;
   state.shikiOrigin = S.shikiOrigin || state.shikiOrigin;
   draw();
 }
@@ -36,22 +36,22 @@ function draw() {
   const { settings: st, users, totals, requests, app, tmdb, admin } = S;
   const proxyUsers = users.filter((u) => u.effective !== 'direct' && !u.blocked).length;
   view().innerHTML = `
-    <div class="page-head lib-head"><div><h1 class="page-title">Администрирование</h1>
-      <p class="page-sub">Каждый входит через свой Shikimori и смотрит со своим токеном Anime365. Здесь вы решаете, кого пускать и кому можно грузить видео через сервер.</p></div></div>
+    <div class="page-head adm-heading"><h1 class="page-title">Администрирование</h1>
+      <p class="page-sub">Управление доступом, подключениями и трафиком сервера.</p></div>
     ${app ? '' : `<div class="adm-alert"><b>Сначала укажите приложение Shikimori</b><span>Без него никто не сможет войти в Yoru. Откройте раздел «Приложение Shikimori».</span></div>`}
 
-    <div class="adm-stats">
-      <div><b>${users.length}</b><span>${users.length === 1 ? 'пользователь' : 'пользователей'}</span></div>
-      <div><b>${proxyUsers}</b><span>с видео через сервер</span></div>
-      <div><b>${mb(totals.today)}</b><span>через сервер сегодня</span></div>
-      <div><b>${mb(totals.month)}</b><span>за этот месяц</span></div>
-    </div>
+    <dl class="adm-stats" aria-label="Сводка сервера">
+      <div><dt>Пользователи</dt><dd>${users.length}</dd></div>
+      <div><dt>С видео через сервер</dt><dd>${proxyUsers}</dd></div>
+      <div><dt>Трафик сегодня</dt><dd>${mb(totals.today)}</dd></div>
+      <div><dt>Трафик за месяц</dt><dd>${mb(totals.month)}</dd></div>
+    </dl>
 
     <div class="settings">
       <section class="set-card">
         <h2>Пользователи</h2>
         <p class="set-lead">Видео «напрямую» вообще не нагружает сервер. «Запасной через сервер» включается, только когда CDN не отдал видео. «Через сервер» — каждая серия 1080p проходит через VPS целиком, примерно 0,5–0,7 ГБ.</p>
-        <div class="adm-users">${users.map(userRow).join('') || '<p class="set-note">Пока никого.</p>'}</div>
+        <div class="adm-users">${users.map(userRow).join('') || '<p class="set-note">Пользователи появятся здесь после первого входа.</p>'}</div>
       </section>
 
       <section class="set-card">
@@ -66,7 +66,7 @@ function draw() {
             <span><b>${esc(r.nickname)}</b><small>${esc(ago(r.at))}</small></span>
             <button class="btn primary small" type="button" data-allow="${esc(r.nickname)}">Пустить</button></li>`).join('')}</ul>` : ''}
         <h3>Список доступа</h3>
-        <form class="inline-form" id="admAllowForm"><input class="input" id="admNick" placeholder="Ник на Shikimori" autocomplete="off" spellcheck="false">
+        <form class="inline-form" id="admAllowForm"><input class="input" id="admNick" aria-label="Ник на Shikimori" placeholder="Ник на Shikimori" autocomplete="off" spellcheck="false">
           <button class="btn primary small" type="submit">Добавить</button></form>
         <div class="adm-chips">${st.allow.length ? st.allow.map((n) => `<span class="adm-chip">${esc(n)}<button type="button" data-unallow="${esc(n)}" aria-label="Убрать ${esc(n)}">×</button></span>`).join('') : '<p class="set-note">Список пуст.</p>'}</div>
         <p class="set-note">Пришлите другу адрес Yoru. Если его нет в списке, он увидит «нет доступа», а здесь появится кнопка «Пустить».</p>
@@ -79,7 +79,7 @@ function draw() {
           ${LEVELS.map((v) => `<label class="choice-item"><input type="radio" name="admDefault" value="${v}" ${st.defaultVideo === v ? 'checked' : ''}><span><b>${VIDEO_RU[v][0]}</b><small>${VIDEO_RU[v][1]}</small></span></label>`).join('')}
         </div>
         <h3>Дневной лимит на человека</h3>
-        <form class="inline-form" id="admCapForm"><input class="input" id="admCap" type="number" min="0" step="0.5" inputmode="decimal" value="${+(st.dailyCapMB / 1024).toFixed(2)}" style="max-width:140px"><span class="adm-unit">ГБ в день</span>
+        <form class="inline-form" id="admCapForm"><input class="input" id="admCap" aria-label="Дневной лимит, ГБ" type="number" min="0" step="0.5" inputmode="decimal" value="${+(st.dailyCapMB / 1024).toFixed(2)}"><span class="adm-unit">ГБ в день</span>
           <button class="btn primary small" type="submit">Сохранить</button></form>
         <p class="set-note">Сколько видео один человек может прогнать через сервер за сутки (по UTC). 0 — без лимита. Когда лимит кончился, видео через сервер перестаёт грузиться до следующего дня, а напрямую — продолжает. Субтитры в лимит не входят.</p>
       </section>
@@ -109,7 +109,7 @@ function draw() {
         <h2>TMDB: баннеры и логотипы</h2>
         <p class="set-lead">С ключом TMDB пользователи смогут выбрать баннеры «как на AniScroll» (чистые кадры без надписей), а плеер покажет логотип названия тайтла.</p>
         ${tmdb.fromEnv ? '<p class="set-note">Ключ задан переменной TMDB_API_KEY.</p>' : `
-        <form class="inline-form" id="admTmdbForm"><input class="input" id="admTmdb" type="password" autocomplete="off" spellcheck="false" placeholder="${tmdb.configured ? `Сохранён (${esc(tmdb.hint)}). Введите новый, чтобы заменить` : 'API Key или API Read Access Token'}">
+        <form class="inline-form" id="admTmdbForm"><input class="input" id="admTmdb" aria-label="Ключ TMDB" type="password" autocomplete="off" spellcheck="false" placeholder="${tmdb.configured ? `Сохранён (${esc(tmdb.hint)}). Введите новый, чтобы заменить` : 'API Key или API Read Access Token'}">
           <button class="btn primary small" type="submit">Проверить и сохранить</button>${tmdb.configured ? '<button class="btn ghost small" type="button" id="admTmdbDel">Убрать</button>' : ''}</form>
         <p class="set-note">Ключ бесплатный: зарегистрируйтесь на <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener">themoviedb.org ${ICON.ext}</a> и откройте <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Настройки → API ${ICON.ext}</a>. Подойдёт и короткий «API Key», и длинный «Read Access Token». Ключ хранится только на сервере.</p>`}
       </section>

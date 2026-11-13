@@ -1,6 +1,7 @@
 // Плеер Yoru: свои контролы поверх <video>, HLS, субтитры, каналы CDN.
 import { $$, esc, store, fmtTime, absUrl } from './core.js';
 import { translationLabel } from './translation-names.js';
+import { cancelSurfaceMotion, surfaceMotion } from './interface-motion.js';
 
 export const KIND = { voice: 'Озвучка', sub: 'Субтитры', raw: 'Оригинал' };
 export const LANG = { ru: 'рус', en: 'англ', ja: 'яп', uk: 'укр' };
@@ -419,13 +420,21 @@ export function makePlayer(root, h) {
     menu.innerHTML = menuHTML(kind);
     menu.dataset.kind = kind;
     menu.hidden = false;
+    menu.inert = false;
+    surfaceMotion(menu, true, { offset: 7 });
     root.classList.remove('idle');
     $$('[data-menu]', root).forEach((b) => b.setAttribute('aria-expanded', b.dataset.menu === kind));
     const sel = menu.querySelector('[aria-checked="true"]');
     if (sel) sel.scrollIntoView({ block: 'nearest' });
   }
   function closeMenu() {
-    menuKind = null; menu.hidden = true;
+    if (menuKind) {
+      const trigger = root.querySelector(`[data-menu="${menuKind}"]`);
+      if (menu.contains(document.activeElement)) trigger?.focus({ preventScroll: true });
+      menuKind = null;
+      menu.inert = true;
+      surfaceMotion(menu, false, { done: () => { menu.hidden = true; } });
+    }
     $$('[data-menu]', root).forEach((b) => b.setAttribute('aria-expanded', 'false'));
     wake();
   }
@@ -636,6 +645,7 @@ export function makePlayer(root, h) {
     loading() { hideMsg(); q('.vp-spin').hidden = false; },
     destroy() {
       dead = true; this.stop();
+      cancelSurfaceMotion(menu);
       clearTimeout(idleT); clearTimeout(upT); clearTimeout(flashT);
       document.removeEventListener('fullscreenchange', onFs);
       document.removeEventListener('webkitfullscreenchange', onFs);

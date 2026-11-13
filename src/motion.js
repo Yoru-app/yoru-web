@@ -1,9 +1,13 @@
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const easing = 'cubic-bezier(.22, 1, .36, 1)';
+import { animateMotion, reducedMotion } from '../public/js/interface-motion.js';
+
 const contentSelector = '.grid, .wide-grid, .eps, .notes, .tr-list, .t-pane, [data-row], #setBody, #rateBox, .side-list, .adm-users';
-const blockSelector = '.section, .t-head, .watch, .settings-content, .hero-inner';
+const blockSelector = '.section, .t-head, .watch, .shiki-board, .empty';
 const contentScopes = new WeakMap();
 const indicatorScopes = new WeakMap();
+
+export function retireView(element) {
+  element.inert = true;
+}
 
 // Поддерживает и Vue-списки, и блоки, которые пока заполняются через innerHTML.
 export const vContentMotion = {
@@ -17,17 +21,24 @@ export const vContentMotion = {
       const candidates = [...pending].filter((element) => root.contains(element) && element.isConnected);
       pending.clear();
       if (reducedMotion.matches) return;
-      const blocks = candidates.filter((element) =>
-        !candidates.some((parent) => parent !== element && parent.contains(element)));
-      for (const element of blocks) {
+      const blocks = candidates.filter((element) => {
+        if (element.matches('.t-head') && root.hasAttribute('data-cover-opening')) return false;
+        if (candidates.some((parent) => parent !== element && parent.contains(element))) return false;
+        const { top, bottom, width, height } = element.getBoundingClientRect();
+        return width && height && bottom >= 0 && top <= innerHeight;
+      }).slice(0, 10);
+      blocks.forEach((element, index) => {
         animations.get(element)?.cancel();
-        const animation = element.animate([
-          { opacity: .55, translate: '0 6px' },
+        const card = element.matches('.card, .lcard, .history-card');
+        let shift = card ? '0 10px' : '0 6px';
+        if (element.matches('.t-head, .watch')) shift = '0 0';
+        if (element.matches('.t-pane')) shift = `${element.style.getPropertyValue('--title-tab-shift') || '0px'} 0`;
+        const animation = animateMotion(element, [
+          { opacity: card ? .35 : .55, translate: shift },
           { opacity: 1, translate: '0 0' },
-        ], { duration: 220, easing });
-        animations.set(element, animation);
-        animation.onfinish = () => animations.delete(element);
-      }
+        ], 270, { delay: Math.min(index * 18, 72), fill: 'backwards', done: () => animations.delete(element) });
+        if (animation) animations.set(element, animation);
+      });
     }
 
     const observer = new MutationObserver((records) => {
@@ -41,7 +52,12 @@ export const vContentMotion = {
           }
           continue;
         }
+        if (target?.id === 'setBody') {
+          for (const child of target.children) pending.add(child);
+          continue;
+        }
         if (target?.matches(contentSelector)) {
+          if (target.childElementCount === 1 && target.firstElementChild.matches('.loading')) continue;
           pending.add(target);
           continue;
         }
@@ -67,7 +83,7 @@ export const vContentMotion = {
 };
 
 export const vActiveIndicator = {
-  mounted(root) {
+  mounted(root, { modifiers }) {
     const marker = document.createElement('i');
     marker.className = 'active-indicator';
     marker.setAttribute('aria-hidden', 'true');
@@ -75,25 +91,59 @@ export const vActiveIndicator = {
     root.append(marker);
     let frame = 0;
     let current = null;
+    let positionKey = '';
+    let viewportWidth = 0;
+    let animation;
 
     function position() {
       frame = 0;
       const selected = [...root.children].find((element) =>
         element.matches('[aria-current="page"], [aria-selected="true"], [aria-pressed="true"]') && !element.hidden);
-      if (selected !== current) {
+      const switched = selected !== current;
+      const previous = switched && current && !marker.hidden && !reducedMotion.matches
+        ? marker.getBoundingClientRect()
+        : null;
+      if (switched) {
         if (current) resize.unobserve(current);
         current = selected;
         if (current) resize.observe(current);
       }
-      marker.hidden = !selected;
-      if (!selected) return;
+      if (!selected) {
+        marker.hidden = true;
+        positionKey = '';
+        animation?.cancel();
+        return;
+      }
       const bounds = root.getBoundingClientRect();
       const active = selected.getBoundingClientRect();
+      const x = active.left - bounds.left + root.scrollLeft - root.clientLeft;
+      const y = active.top - bounds.top + root.scrollTop - root.clientTop;
+      const key = `${x}/${y}/${active.width}/${active.height}`;
+      if (modifiers.reveal && (switched || key !== positionKey || viewportWidth !== root.clientWidth)) {
+        viewportWidth = root.clientWidth;
+        const inset = parseFloat(getComputedStyle(root).scrollPaddingLeft) || 0;
+        const left = x - inset;
+        const right = x + active.width + inset;
+        if (left < root.scrollLeft || right > root.scrollLeft + viewportWidth) {
+          root.scrollTo({
+            left: left < root.scrollLeft ? left : right - viewportWidth,
+            behavior: 'instant',
+          });
+        }
+      }
+      if (!switched && key === positionKey) return;
+      positionKey = key;
+      animation?.cancel();
+      marker.hidden = false;
       marker.style.width = active.width + 'px';
       marker.style.height = active.height + 'px';
-      marker.style.transform = `translate3d(${active.left - bounds.left + root.scrollLeft - root.clientLeft}px, ${active.top - bounds.top + root.scrollTop - root.clientTop}px, 0)`;
+      marker.style.transform = `translate3d(${x}px, ${y}px, 0)`;
       if (!marker.isConnected) root.append(marker);
-      root.classList.add('indicator-ready');
+      if (previous?.width && previous.height && active.width && active.height) {
+        animation = animateMotion(marker, [{
+          transform: `translate3d(${x + previous.left - active.left}px, ${y + previous.top - active.top}px, 0) scale(${previous.width / active.width}, ${previous.height / active.height})`,
+        }, { transform: marker.style.transform }], 260);
+      }
     }
     function schedule() {
       if (!frame) frame = requestAnimationFrame(position);
@@ -113,8 +163,9 @@ export const vActiveIndicator = {
       observer.disconnect();
       resize.disconnect();
       cancelAnimationFrame(frame);
+      animation?.cancel();
       marker.remove();
-      root.classList.remove('has-active-indicator', 'indicator-ready');
+      root.classList.remove('has-active-indicator');
     });
   },
   beforeUnmount(root) {

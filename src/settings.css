@@ -1,0 +1,150 @@
+#view[data-page="settings"] .page-head { padding-top: 28px; }
+#view[data-page="settings"] .page-title {
+  margin-bottom: 0;
+  font-size: 2.125rem;
+  line-height: 1.2;
+}
+.set-layout:has(.settings-nav) {
+  grid-template-columns: minmax(200px, 236px) minmax(0, 1fr);
+  gap: 20px;
+  padding-top: 20px;
+}
+.settings-nav {
+  padding: 6px;
+  background: var(--night-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.settings-nav .set-nav-a { min-height: 50px; padding: 9px 11px; }
+.settings-nav .set-nav-a small { color: var(--muted); }
+.settings-nav .set-nav-a:focus-visible { outline-offset: -2px; }
+.settings-nav .set-nav-a[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--line); }
+.settings-nav > .active-indicator { background: var(--night-3); }
+
+.settings-panel {
+  --settings-inset: 22px;
+  --settings-radius: 16px;
+  gap: 14px;
+  min-width: 0;
+}
+.settings-panel .set-card { padding: var(--settings-inset); border-radius: var(--settings-radius); }
+.settings-panel .set-card h2, .settings-panel .anime365-settings > summary b {
+  font: 700 1.125rem/1.3 var(--body);
+}
+.settings-panel .set-card h2 + :is(.choice, .row-line) { margin-top: 12px; }
+.settings-panel .set-card h3 { font-size: .9375rem; margin: 19px 0 8px; }
+.settings-panel .set-lead { margin: 8px 0 14px; font-size: .875rem; }
+.settings-panel .set-note,
+.settings-panel .set-card .row-line small,
+.settings-panel .tr-rank-name small { color: var(--muted); }
+.settings-panel .set-card .row-line { gap: 12px; cursor: default; }
+.settings-panel .set-card label.row-line { cursor: pointer; }
+.setting-toggle > span, .setting-action > span { min-width: 0; }
+.setting-toggle b, .setting-action b { display: block; font-weight: 650; line-height: 1.35; }
+.settings-panel .set-card .row-line small { margin-top: 3px; max-width: 64ch; line-height: 1.4; }
+.settings-panel .setting-toggle:has(:disabled) { cursor: default; }
+.setting-toggle .toggle:disabled { opacity: .5; cursor: not-allowed; }
+.setting-action .danger { color: var(--rose); }
+
+.settings-panel .choice { gap: 8px; }
+.settings-panel .choice-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 8px 0 0;
+}
+.settings-panel .choice-label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 8px 0 8px 11px;
+}
+.settings-panel .choice-label:only-child { grid-column: 1 / -1; }
+.settings-panel .choice-item input {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  cursor: inherit;
+}
+.settings-panel .choice-item input:checked {
+  border-color: var(--lantern);
+  background: radial-gradient(circle, var(--lantern) 0 3.5px, transparent 4px);
+}
+.settings-panel .choice-item:has(input:focus-visible) { outline: 2px solid var(--lantern); outline-offset: 2px; }
+.settings-panel .choice-item input:focus-visible { outline: none; }
+.settings-panel .choice-item b { font-size: .875rem; line-height: 1.35; overflow-wrap: anywhere; }
+.settings-panel .choice-help-button { width: 24px; height: 24px; }
+.settings-panel .choice-tooltip { right: -2px; }
+.settings-panel .choice.width-choice { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.settings-panel .choice.hero-source-choice { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.settings-panel .pattern-choice { grid-template-columns: repeat(auto-fit, minmax(min(100%, 146px), 1fr)); }
+.settings-panel .pattern-choice .choice-label { align-items: end; }
+.settings-panel .pattern-choice .choice-label input { margin-bottom: 1px; }
+.settings-panel .pattern-choice .choice-help { align-self: end; margin-bottom: 6px; }
+.settings-panel .width-slider { margin-bottom: 12px; }
+.settings-panel .width-slider:not(.is-on) span,
+.settings-panel .width-slider:not(.is-on) output { color: var(--muted); }
+
+.settings-panel .anime365-settings { padding: 0; }
+.settings-panel .anime365-settings > summary { padding: 16px var(--settings-inset); border-radius: var(--settings-radius); }
+.settings-panel .anime365-settings > summary:hover { background: var(--night-3); }
+.settings-panel .anime365-settings[open] > summary { border-radius: var(--settings-radius) var(--settings-radius) 0 0; }
+.settings-panel .anime365-settings-body { padding: 8px var(--settings-inset) var(--settings-inset); }
+.settings-panel .tr-rank li:not(.tr-rank-empty) { grid-template-columns: 24px minmax(0, 1fr) auto; }
+.tr-rank-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-panel .tr-rank-name b { white-space: normal; overflow-wrap: anywhere; }
+.settings-panel .home-row-moves .icon-btn { width: 36px; height: 36px; }
+.settings-panel .home-row-moves .icon-btn:not(:disabled):hover { background: var(--night-3); }
+.settings-panel .home-row-label.is-dup { opacity: .75; cursor: default; }
+
+@media (max-width: 980px) {
+  .set-layout:has(.settings-nav) { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .settings-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    margin: 0;
+    overflow: visible;
+    cursor: auto;
+  }
+  .settings-nav .set-nav-a { border-color: transparent; border-radius: 10px; justify-content: center; }
+}
+@media (max-width: 600px) {
+  #view[data-page="settings"] .page-head { padding-top: 16px; }
+  #view[data-page="settings"] .page-title { font-size: 1.625rem; }
+  .set-layout:has(.settings-nav) { padding-top: 14px; }
+  .settings-panel { --settings-inset: 16px; gap: 12px; }
+  .settings-nav .set-nav-a {
+    flex-direction: column;
+    gap: 4px;
+    min-height: 54px;
+    padding: 5px 3px;
+    text-align: center;
+  }
+  .settings-nav .set-nav-a b { font-size: .75rem; line-height: 1.2; }
+  .settings-panel .choice.width-choice:not(.hero-source-choice),
+  .settings-panel .pattern-choice { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-panel :is(.width-choice:not(.hero-source-choice), .pattern-choice) .choice-tooltip {
+    max-width: min(220px, calc(50vw - 24px));
+  }
+  .settings-panel :is(.width-choice:not(.hero-source-choice), .pattern-choice) .choice-item:nth-child(odd) .choice-tooltip {
+    left: 0;
+    right: auto;
+  }
+  .settings-panel .width-slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+  .settings-panel .width-slider input { grid-column: 1 / -1; grid-row: 2; width: 100%; margin: 0; }
+  .settings-panel .setting-action { align-items: flex-start; flex-direction: column; }
+  .settings-panel .setting-action .btn { min-height: 40px; }
+  .settings-panel .home-row-setting { display: grid; grid-template-columns: 20px minmax(0, 1fr); row-gap: 7px; }
+  .settings-panel .home-row-moves { grid-column: 2; }
+  .settings-panel .home-row-moves .icon-btn { width: 40px; height: 40px; }
+  .settings-panel .tr-rank-actions { grid-column: 2; }
+  .settings-panel .tr-rank li:not(.tr-rank-empty) { grid-template-columns: 24px minmax(0, 1fr); }
+}

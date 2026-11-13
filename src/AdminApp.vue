@@ -2,6 +2,7 @@
 import { vContentMotion } from './motion.js';
 import { onMounted, onUnmounted, ref } from 'vue';
 import { renderAdmin } from '../public/js/views/admin.js';
+import './admin.css';
 
 const error = ref('');
 let loading = false;
@@ -14,7 +15,8 @@ async function refresh() {
   finally { loading = false; }
 }
 function onVisible() {
-  if (document.visibilityState === 'visible' && !document.querySelector('.pop')) refresh();
+  if (document.visibilityState === 'visible' && !document.querySelector('.pop:not([inert])') &&
+      !document.activeElement?.matches('input, textarea, select')) refresh();
 }
 onMounted(() => {
   refresh();
@@ -26,12 +28,12 @@ onUnmounted(() => document.removeEventListener('visibilitychange', onVisible));
 <template>
   <header class="adm-bar">
     <span class="logo"><img class="logo-mark" src="/logo.svg" alt="" width="34" height="37"><span class="logo-t">Yoru</span></span>
-    <span class="adm-badge">администрирование</span>
-    <span class="adm-bar-sp"></span>
-    <a class="btn ghost small" href="/" target="_blank" rel="noopener">Открыть Yoru</a>
-    <a class="btn ghost small" href="/admin_panel/logout">Выйти</a>
+    <div class="adm-bar-actions">
+      <a class="btn ghost small" href="/" target="_blank" rel="noopener">Открыть Yoru</a>
+      <a class="btn ghost small" href="/admin_panel/logout">Выйти</a>
+    </div>
   </header>
-  <main v-content-motion id="view" v-show="!error" tabindex="-1"></main>
-  <div v-if="error" class="section"><div class="empty"><p>{{ error }}</p><button class="btn ghost small" type="button" @click="refresh">Повторить</button></div></div>
+  <div v-if="error" class="adm-error" role="alert"><p>{{ error }}</p><button class="btn ghost small" type="button" @click="refresh">Повторить</button></div>
+  <main v-content-motion id="view" tabindex="-1"></main>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 </template>

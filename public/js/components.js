@@ -2,6 +2,7 @@
 import { esc, ICON, store } from './core.js';
 import { posterHTML, bannerHTML } from './art.js';
 import { KIND, STATUS, rateOf, listLabel, metaLine } from './shiki.js';
+import { scoreClass } from './anime-facts.js';
 
 // Постер с названием. opts: badge, meta, href, progress (0..100), ext
 export function animeCard(a, opts = {}) {
@@ -10,7 +11,7 @@ export function animeCard(a, opts = {}) {
   const meta = opts.meta ?? metaLine(a);
   return `<a class="card" href="${esc(href)}"${opts.ext ? ' target="_blank" rel="noopener"' : ''}>
     <div class="poster">${posterHTML(a)}
-      ${a.score ? `<span class="badge top">${a.score.toFixed(1)}</span>` : ''}
+      ${a.score ? `<span class="badge top ${scoreClass(a.score)}">${a.score.toFixed(1)}</span>` : ''}
       ${opts.badge ? `<span class="badge">${esc(opts.badge)}</span>` : r && !opts.noList ? `<span class="badge list st-${r.status}">${esc(listLabel(r.status))}</span>` : ''}
       ${opts.progress ? `<span class="prog"><i style="width:${opts.progress}%"></i></span>` : ''}
     </div>

@@ -1,10 +1,42 @@
 :root {
   --motion-fast: 130ms;
-  --motion-base: 220ms;
+  --motion-base: 240ms;
   --motion-ease: cubic-bezier(.22, 1, .36, 1);
 }
 
-.route-page { animation: route-appear var(--motion-base) var(--motion-ease); }
+.route-shift-enter-active, .panel-shift-enter-active, .drawer-shift-enter-active {
+  transition: opacity var(--motion-base) var(--motion-ease), translate var(--motion-base) var(--motion-ease);
+}
+.route-shift-leave-active, .panel-shift-leave-active, .drawer-shift-leave-active {
+  transition: opacity 115ms ease-in, translate 115ms ease-in;
+  pointer-events: none;
+}
+.route-shift-enter-from { opacity: .58; translate: 0 7px; }
+.route-shift-leave-to { opacity: .42; translate: 0 -3px; }
+.route-shift-leave-active.cover-route-leave,
+.route-shift-enter-active[data-cover-opening] { transition-duration: 1ms; }
+.route-shift-enter-from[data-cover-opening] { opacity: 1; translate: none; }
+.panel-shift-enter-from, .panel-shift-leave-to, .drawer-shift-enter-from, .drawer-shift-leave-to {
+  opacity: 0;
+  translate: 0 7px;
+}
+.drawer-shift-enter-from, .drawer-shift-leave-to { translate: 8px 0; }
+
+.cover-unfold { position: fixed; inset: 0; z-index: 28; pointer-events: none; overflow: hidden; }
+.cover-unfold-backdrop { position: absolute; inset: 0; background: var(--night); }
+.cover-unfold-poster {
+  position: absolute;
+  overflow: hidden;
+  background: var(--night-2);
+  transform-origin: top left;
+}
+.cover-unfold-poster > :is(img,.ph) { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; }
+.title-loading { padding-bottom: 28px; }
+.title-loading-media { background: var(--night-2); }
+.title-loading-copy { display: grid; gap: 14px; margin-bottom: 12px; max-width: 580px; }
+.title-loading-copy .skel { height: 16px; width: 56%; }
+.title-loading-copy .skel:first-child { height: clamp(30px, 5vw, 52px); width: 84%; }
+.title-loading-copy .skel:last-child { height: 38px; width: min(38%, 190px); margin-top: 8px; }
 @keyframes route-appear {
   from { opacity: .6; }
   to { opacity: 1; }
@@ -20,11 +52,9 @@
   pointer-events: none;
   border-radius: 12px;
   background: var(--night-3);
+  transform-origin: top left;
 }
 .active-indicator[hidden] { display: none; }
-.indicator-ready > .active-indicator {
-  transition: transform 280ms var(--motion-ease), width 220ms var(--motion-ease), height 220ms var(--motion-ease);
-}
 .tabs > .active-indicator {
   border-radius: 10px 10px 0 0;
   background: rgba(242,181,68,.07);
@@ -35,6 +65,9 @@
 .seg.has-active-indicator > button[aria-pressed="true"] { background: transparent; }
 .tabs.has-active-indicator > button::after { display: none; }
 .seg > .active-indicator { background: rgba(242,181,68,.12); }
+@media (max-width: 980px) {
+  .set-nav.has-active-indicator { position: relative; top: auto; }
+}
 
 .nav-a, .set-nav-a, .tabs button, .seg button, .chip, .ep-groups button, .tr, .side-ep {
   transition: color var(--motion-fast) ease, background-color var(--motion-base) ease,
@@ -44,6 +77,8 @@
   transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) ease,
     border-color var(--motion-fast) ease, color var(--motion-fast) ease, opacity var(--motion-fast) ease;
 }
+.hero-pick { transition: opacity var(--motion-base) var(--motion-ease),
+  outline-color var(--motion-base) ease, transform var(--motion-base) var(--motion-ease); }
 .icon-btn:active, .dd:active, .chips-more:active { transform: scale(.96); }
 .card .poster, .wcard, .ep {
   transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) ease;
@@ -58,11 +93,17 @@
   .ep:hover { transform: translateY(-2px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .route-page { animation: none; }
-  .indicator-ready > .active-indicator,
+  .hero-swap, .hero-media img, .hero-logo, .fit-blur > .fit-bg, .vp-up, .dialog, img.cv-swap, .logo-mark { animation: none; }
+  .route-shift-enter-active, .route-shift-leave-active,
+  .panel-shift-enter-active, .panel-shift-leave-active,
+  .drawer-shift-enter-active, .drawer-shift-leave-active { transition: none; }
+  .route-shift-enter-from, .route-shift-leave-to,
+  .panel-shift-enter-from, .panel-shift-leave-to,
+  .drawer-shift-enter-from, .drawer-shift-leave-to { opacity: 1; translate: none; }
   .nav-a, .set-nav-a, .tabs button, .seg button, .chip, .ep-groups button, .tr, .side-ep,
   .btn, .icon-btn, .dd, .chips-more, .more, .card .poster, .wcard, .ep,
-  .prog i, .wide-bar i, .bar i, .search input { transition: none; }
-  .card:hover .poster, .wcard:hover, .ep:hover,
+  .prog i, .wide-bar i, .bar i, .search input, .hero-pick, .row-expand svg, .dd-chev,
+  .vp-ctrl, .vp-top, .vp-big, .vp-ripple, .vp-flash { transition: none; }
+  .card:hover .poster, .wcard:hover, .ep:hover, .hero-pick:hover,
   .icon-btn:active, .dd:active, .chips-more:active, .tr:active, .ep:active { transform: none; }
 }

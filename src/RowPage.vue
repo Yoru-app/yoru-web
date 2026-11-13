@@ -1,7 +1,7 @@
 <script setup>
 import { vContentMotion } from './motion.js';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { errorBlock, state } from '../public/js/core.js';
+import { errorBlock } from '../public/js/core.js';
 import { skeletonRow } from '../public/js/components.js';
 import { HOME_ROWS, loadHomeRow } from '../public/js/views/home.js';
 
@@ -18,9 +18,7 @@ async function load() {
   } catch (error) { if (active) html.value = errorBlock(error); }
 }
 function onClick(event) {
-  if (event.target.closest('[data-retry-route]')) { load(); return; }
-  const link = event.target.closest('[data-tr]');
-  if (link) state.pendingTr = +link.dataset.tr;
+  if (event.target.closest('[data-retry-route]')) load();
 }
 onMounted(() => {
   window.scrollTo({ top: 0, behavior: 'instant' });

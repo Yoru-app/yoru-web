@@ -10,7 +10,7 @@ const prefs = shallowRef(homePrefs());
 const revision = ref(0);
 let dispose;
 function rowSkeleton(key, title) {
-  if ((key === 'continue' && !lib.history().length) || dupRow(prefs.value) === key) return '';
+  if ((key === 'continue' && !lib.continueHistory().length) || dupRow(prefs.value) === key) return '';
   return section(title, skeletonRow(6, key === 'continue' || key === 'newEps'));
 }
 async function refresh() {

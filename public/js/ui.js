@@ -1,3 +1,5 @@
+import { cancelSurfaceMotion, surfaceMotion } from './interface-motion.js';
+
 // Всплывающие меню в стиле Yoru вместо системных <select>.
 // popover(button, { html, onPick, className }) — показывает список под кнопкой,
 // стрелки ↑↓ переходят по пунктам, Enter выбирает, Esc закрывает.
@@ -8,18 +10,21 @@ export function closePopover(focusBack = false) {
   const { pop, btn, cleanup } = open;
   open = null;
   cleanup();
-  pop.remove();
   btn.setAttribute('aria-expanded', 'false');
   btn.classList.remove('dd-open');
   if (focusBack) btn.focus();
+  pop.inert = true;
+  surfaceMotion(pop, false, { offset: pop.classList.contains('up') ? 4 : -4, done: () => pop.remove() });
 }
 
-export function popover(btn, { html, onPick, className = '', width, cols }) {
+export function popover(btn, { html, onPick, className = '', width, cols, multiple = false, label, fitViewport = false }) {
   if (open && open.btn === btn) { closePopover(); return; }
   closePopover();
   const pop = document.createElement('div');
   pop.className = 'pop ' + className;
   pop.setAttribute('role', 'listbox');
+  if (multiple) pop.setAttribute('aria-multiselectable', 'true');
+  if (label) pop.setAttribute('aria-label', label);
   pop.innerHTML = html;
   if (cols) pop.dataset.cols = cols;
   document.body.append(pop);
@@ -28,23 +33,45 @@ export function popover(btn, { html, onPick, className = '', width, cols }) {
 
   const place = () => {
     const r = btn.getBoundingClientRect();
-    pop.style.minWidth = (width || r.width) + 'px';
-    const h = pop.offsetHeight, w = pop.offsetWidth;
-    const below = innerHeight - r.bottom, up = below < h + 12 && r.top > h + 12;
-    pop.style.top = (up ? r.top - h - 8 : r.bottom + 8) + scrollY + 'px';
+    pop.style.minWidth = Math.min(width || r.width, innerWidth - 16) + 'px';
+    if (fitViewport) pop.style.removeProperty('max-height');
+    const h = pop.offsetHeight;
+    const above = r.top, below = innerHeight - r.bottom;
+    const up = below < h + 12 && (fitViewport ? above > below : above > h + 12);
+    if (fitViewport) pop.style.maxHeight = Math.max(0, Math.min(h, (up ? above : below) - 16)) + 'px';
+    const w = pop.offsetWidth;
+    pop.style.top = (up ? r.top - pop.offsetHeight - 8 : r.bottom + 8) + scrollY + 'px';
     pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + scrollX + 'px';
     pop.classList.toggle('up', up);
+    pop.style.transformOrigin = up ? 'left bottom' : 'left top';
   };
   place();
+  surfaceMotion(pop, true, { offset: pop.classList.contains('up') ? 6 : -6, scale: .96, duration: 195 });
 
   const items = () => [...pop.querySelectorAll('[data-v]')];
-  const focusAt = (i) => { const list = items(); if (list.length) list[(i + list.length) % list.length].focus(); };
+  const focusAt = (i, preventScroll = false) => {
+    const list = items();
+    if (!list.length) return;
+    const item = list[(i + list.length) % list.length];
+    item.focus({ preventScroll });
+    if (preventScroll && item.offsetTop + item.offsetHeight > pop.clientHeight) {
+      pop.scrollTop = item.offsetTop + item.offsetHeight - pop.clientHeight;
+    }
+  };
   const cur = items().findIndex((x) => x.getAttribute('aria-selected') === 'true');
-  focusAt(cur >= 0 ? cur : 0);
+  focusAt(cur >= 0 ? cur : 0, fitViewport);
 
   const onClick = (e) => {
     const it = e.target.closest('[data-v]');
     if (!it) return;
+    if (multiple) {
+      const selected = onPick(it.dataset.v);
+      for (const option of items()) {
+        const value = option.dataset.v;
+        option.setAttribute('aria-selected', String(value ? selected.includes(value) : !selected.length));
+      }
+      return;
+    }
     closePopover(true);
     onPick(it.dataset.v);
   };
@@ -61,19 +88,24 @@ export function popover(btn, { html, onPick, className = '', width, cols }) {
     else if (e.key === 'Tab') closePopover();
   };
   const onDoc = (e) => { if (!pop.contains(e.target) && !btn.contains(e.target)) closePopover(); };
-  const onScroll = (e) => { if (!pop.contains(e.target)) place(); };
+  const onScroll = (e) => {
+    if (!btn.isConnected) closePopover();
+    else if (!pop.contains(e.target)) place();
+  };
+  const onRoute = () => closePopover();
   pop.addEventListener('click', onClick);
   pop.addEventListener('keydown', onKey);
   document.addEventListener('pointerdown', onDoc, true);
   addEventListener('resize', place);
   addEventListener('scroll', onScroll, true);
-  window.addEventListener('hashchange', () => closePopover(), { once: true });
+  window.addEventListener('hashchange', onRoute);
   open = {
     pop, btn,
     cleanup() {
       document.removeEventListener('pointerdown', onDoc, true);
       removeEventListener('resize', place);
       removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('hashchange', onRoute);
     },
   };
   return pop;
@@ -97,23 +129,38 @@ export function bindDropdown(btn, opts) {
 
 // Модальное окно: openModal({ title, html, onOpen, wide }) → { el, close }. Esc, клик по фону и «×» закрывают.
 let modalOpen = null;
+let closingModal = null;
 export function openModal({ title, html, onOpen, onClose, wide = false }) {
   if (modalOpen) modalOpen.close();
+  if (closingModal) {
+    cancelSurfaceMotion(closingModal);
+    cancelSurfaceMotion(closingModal.firstElementChild);
+    closingModal.remove();
+    closingModal = null;
+  }
   const back = document.createElement('div');
   back.className = 'ymodal-back';
   back.innerHTML = `<div class="ymodal${wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="ymodal-head"><h2 id="modalTitle">${title}</h2>
       <button class="ymodal-x" type="button" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div class="ymodal-body">${html}</div></div>`;
+  const dialog = back.querySelector('.ymodal');
   const prevFocus = document.activeElement;
+  let closed = false;
   const close = () => {
-    if (!back.isConnected) return;
-    back.classList.add('out');
+    if (closed) return;
+    closed = true;
     document.removeEventListener('keydown', onKey, true);
     window.removeEventListener('hashchange', close);
     document.body.classList.remove('ymodal-on');
-    setTimeout(() => back.remove(), 160);
     modalOpen = null;
+    closingModal = back;
+    back.inert = true;
+    surfaceMotion(dialog, false, { duration: 145 });
+    surfaceMotion(back, false, { offset: 0, scale: 1, duration: 160, done: () => {
+      closingModal = null;
+      back.remove();
+    } });
     if (onClose) onClose();
     if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
   };
@@ -132,10 +179,13 @@ export function openModal({ title, html, onOpen, onClose, wide = false }) {
   window.addEventListener('hashchange', close, { once: true });
   document.body.append(back);
   document.body.classList.add('ymodal-on');
-  modalOpen = { el: back.querySelector('.ymodal'), close };
+  const instance = { el: dialog, close };
+  modalOpen = instance;
+  surfaceMotion(back, true, { offset: 0, scale: 1, duration: 200 });
+  surfaceMotion(dialog, true, { offset: 10, scale: .98, duration: 270 });
   back.querySelector('.ymodal-x').focus({ preventScroll: true });
-  if (onOpen) onOpen(modalOpen.el, close);
-  return modalOpen;
+  if (onOpen) onOpen(dialog, close);
+  return instance;
 }
 
 // Выпадающий список в стиле Yoru вместо <select>:
@@ -161,4 +211,35 @@ export function bindSelect(id, items, value, onPick, { cols = 1, placeholder = '
       + (cols > 1 ? '</div>' : ''),
     onPick: (v) => { if (v !== value) onPick(v); },
   }));
+}
+
+export function bindMultiSelect(btn, options) {
+  bindDropdown(btn, () => {
+    const { items, values, label, placeholder, width, cols, onChange } = options();
+    let selected = [...values];
+    const renderOption = ([value, title]) => {
+      const active = value ? selected.includes(value) : !selected.length;
+      return `<button class="pop-item pop-opt${value ? '' : ' is-any'}" type="button" role="option"
+        data-v="${escH(value)}" aria-selected="${active}"><span>${escH(title)}</span>${CHECK}</button>`;
+    };
+    const grouped = items.some(([, , kind]) => kind);
+    const groups = [['genre', 'Жанры'], ['theme', 'Темы'], ['other', 'Категории']];
+    const optionsHTML = grouped ? groups.map(([kind, heading]) => {
+      const group = items.filter(([, , type]) => (type === 'genre' || type === 'theme' ? type : 'other') === kind);
+      return group.length ? `<div class="pop-genre-group tag-${kind}" role="group" aria-label="${heading}">
+        <div class="pop-genre-heading" aria-hidden="true">${heading}</div>${group.map(renderOption).join('')}</div>` : '';
+    }).join('') : items.map(renderOption).join('');
+    const buttons = renderOption(['', placeholder]) + optionsHTML;
+    return {
+      label, width, cols, multiple: true,
+      className: 'pop-sel pop-multi' + (cols > 1 ? ' pop-cols' : '') + (grouped ? ' pop-genres' : ''),
+      html: cols > 1 ? `<div class="pop-grid" style="--cols:${cols}">${buttons}</div>` : buttons,
+      onPick(value) {
+        const next = !value ? [] : selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
+        if (next.length !== selected.length) onChange(next);
+        selected = next;
+        return selected;
+      },
+    };
+  });
 }

@@ -70,6 +70,17 @@ export function seasonLabel(a) {
 }
 
 const isMissing = (u) => !u || /missing_/.test(u);
+const genreFields = 'id name russian kind';
+const roleFields = 'id rolesRu rolesEn character{id name russian poster{mainUrl}}';
+const normalizeGenres = (items, legacy = false) => (items || []).map((g) => ({
+  // REST v1 and GraphQL have separate genre ID spaces.
+  id: legacy ? -Number(g.id) : Number(g.id),
+  name: g.russian || g.name,
+  kind: g.kind || 'genre',
+})).filter(({ id, name }) => id && name);
+export const isMainCharacter = ({ rolesEn, rolesRu }) =>
+  rolesEn?.some((role) => /^main$/i.test(role)) || rolesRu?.includes('Главная роль');
+
 export function norm(a) {
   if (!a) return null;
   const o = state.shikiOrigin;
@@ -98,7 +109,7 @@ export function norm(a) {
     rating: a.rating || '',
     duration: a.duration || 0,
     poster, posterBig,
-    genres: (a.genres || []).map((g) => ({ id: +g.id, name: g.russian || g.name, kind: g.kind })),
+    genres: normalizeGenres(a.genres, 'aired_on' in a),
     studios: (a.studios || []).map((s) => s.name || s.filtered_name).filter(Boolean),
     description: desc ? stripHtml(desc) : a.description ? stripHtml(String(a.description).replace(/\[[^\]]+\]/g, '')) : '',
     url: a.url ? absUrl(a.url, o) : `${o}/animes/${a.id}`,
@@ -116,11 +127,11 @@ export const metaLine = (a) => [KIND[a.kind] || a.kind, a.year || '', a.episodes
 /* ---------------------------------------------------------------- тайтлы */
 const CARD = 'id name russian kind score status episodes episodesAired nextEpisodeAt airedOn{year date} season poster{mainUrl originalUrl}';
 const DETAIL = `${CARD} english japanese rating duration url franchise releasedOn{date} descriptionHtml description
-  genres{id name russian kind} studios{id name}
+  genres{${genreFields}} studios{id name}
   related{id relationKind relationText anime{${CARD}}}
   chronology{${CARD}}
-  characterRoles{id rolesRu rolesEn character{id name russian poster{mainUrl}}}
-  screenshots{id originalUrl x332Url} videos{id url name kind} scoresStats{score count}`;
+  characterRoles{${roleFields}}
+  screenshots{id originalUrl x332Url} videos{id url name kind playerUrl} scoresStats{score count}`;
 
 const cardCache = new Map();
 const detailCache = new Map();
@@ -133,20 +144,25 @@ function args(obj) {
 }
 
 // Список тайтлов: поиск, фильтры, сортировка. GraphQL, при ошибке — REST.
-export async function listAnimes({ search, genre, kind, status, season, order = 'popularity', page = 1, limit = 30, ids, excludeIds } = {}) {
-  const a = { search, genre, kind, status, season, order: search ? null : order, page, limit, ids, excludeIds, censored: true };
-  try {
-    const d = await gql(`{ animes(${args(a)}) { ${CARD} } }`);
-    return remember((d.animes || []).map(norm));
-  } catch (e) {
-    if (e.code === 0) throw e;
-    console.warn('[yoru] GraphQL animes → REST', e.message);
-    const q = new URLSearchParams();
-    Object.entries({ search, genre, kind, status, season, order: search ? '' : order, page, limit, ids, exclude_ids: excludeIds, censored: 'true' })
-      .forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); });
-    const list = await rest('/animes?' + q);
-    return remember(list.map(norm));
+export async function listAnimes({ search, genre, kind, status, season, order = 'popularity', page = 1, limit = 30, ids, excludeIds, censored = true } = {}) {
+  const genreIds = String(genre || '').split(',').map(Number);
+  const legacy = genreIds.filter((id) => id < 0).map(Math.abs).join(',');
+  const modern = genreIds.filter((id) => id > 0).join(',');
+  if (!legacy) {
+    const a = { search, genre: modern, kind, status, season, order: search ? null : order, page, limit, ids, excludeIds, censored };
+    try {
+      const d = await gql(`{ animes(${args(a)}) { ${CARD} releasedOn{date} } }`);
+      return remember((d.animes || []).map(norm));
+    } catch (e) {
+      if (e.code === 0) throw e;
+      console.warn('[yoru] GraphQL animes → REST', e.message);
+    }
   }
+  const q = new URLSearchParams();
+  Object.entries({ search, genre: legacy, genre_v2: modern, kind, status, season, order: search ? '' : order, page, limit, ids, exclude_ids: excludeIds, censored })
+    .forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); });
+  const list = await rest('/animes?' + q);
+  return remember(list.map(norm));
 }
 
 export async function getAnimesByIds(ids) {
@@ -158,6 +174,31 @@ export async function getAnimesByIds(ids) {
     catch (e) { console.warn('[yoru] posters', e.message); }
   }
   return ids.map((id) => cardCache.get(id)).filter(Boolean);
+}
+
+const durationCache = new Map();
+
+export async function getAnimeDurations(ids, isActive) {
+  const missing = ids.filter((id) => !durationCache.has(id));
+  const pageSize = 50;
+  const batchSize = pageSize * 4;
+  for (let start = 0; start < missing.length && isActive(); start += batchSize) {
+    const batch = missing.slice(start, start + batchSize);
+    const fields = [];
+    for (let offset = 0; offset < batch.length; offset += pageSize) {
+      const page = batch.slice(offset, offset + pageSize);
+      fields.push(`batch${offset}: animes(ids: "${page.join(',')}", limit: ${page.length}) { id duration }`);
+    }
+    const data = await gql(`{ ${fields.join(' ')} }`).catch(() => null);
+    if (!data) break;
+    for (let offset = 0; offset < batch.length; offset += pageSize) {
+      const items = data[`batch${offset}`];
+      if (!Array.isArray(items)) continue;
+      for (const id of batch.slice(offset, offset + pageSize)) durationCache.set(id, 0);
+      for (const { id, duration } of items) durationCache.set(+id, duration || 0);
+    }
+  }
+  return new Map(ids.map((id) => [id, durationCache.get(id)]));
 }
 
 export async function getAnime(id) {
@@ -180,6 +221,36 @@ export async function getAnime(id) {
   detailCache.set(id, { a, at: Date.now() });
   remember([{ ...a, related: null, characters: null, screenshots: null, videos: null, chronology: null }]);
   return a;
+}
+
+export async function titleMetadata(anime) {
+  const needsGenres = !anime.genres.length || anime.genres.some(({ id }) => id < 0);
+  const needsRoles = !anime.characters?.some(isMainCharacter);
+  if (!needsGenres && !needsRoles) return anime;
+  const fields = [needsGenres && `genres{${genreFields}}`, needsRoles && `characterRoles{${roleFields}}`].filter(Boolean).join(' ');
+  const data = await gql(`{ animes(ids: "${anime.id}", limit: 1) { ${fields} } }`).catch(() => null);
+  const detail = data?.animes?.[0];
+  const modernGenres = normalizeGenres(detail?.genres);
+  const graphRoles = detail?.characterRoles?.length ? detail.characterRoles : anime.characters;
+  const [fallbackGenres, fallbackRoles] = await Promise.all([
+    needsGenres && !modernGenres.length && !anime.genres.length
+      ? rest(`/animes/${anime.id}`).then((result) => normalizeGenres(result?.genres, true)).catch(() => []) : [],
+    needsRoles && !graphRoles?.some(isMainCharacter)
+      ? rest(`/animes/${anime.id}/roles`).then((roles) => roles.filter(({ character }) => character).map((role) => {
+        const { character } = role;
+        const poster = character.image?.original || character.image?.preview;
+        return {
+          rolesEn: role.roles || [],
+          rolesRu: role.roles_russian || [],
+          character: { ...character, poster: isMissing(poster) ? null : { mainUrl: absUrl(poster, state.shikiOrigin) } },
+        };
+      })).catch(() => null) : null,
+  ]);
+  return {
+    ...anime,
+    genres: modernGenres.length ? modernGenres : fallbackGenres.length ? fallbackGenres : anime.genres,
+    characters: fallbackRoles?.length ? fallbackRoles : graphRoles,
+  };
 }
 
 export async function related(a) {
@@ -240,11 +311,12 @@ export async function similar(id) {
 let genresCache = null;
 export async function genres() {
   if (genresCache) return genresCache;
+  const data = await gql(`{ genres(entryType: Anime) { ${genreFields} } }`).catch(() => null);
+  const modern = normalizeGenres(data?.genres);
+  const sort = (items) => items.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  if (modern.length) return genresCache = sort(modern);
   const all = await rest('/genres');
-  genresCache = all.filter((g) => !g.entry_type || g.entry_type === 'Anime')
-    .map((g) => ({ id: g.id, name: g.russian || g.name, kind: g.kind || 'genre' }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  return genresCache;
+  return sort(normalizeGenres(all.filter((g) => !g.entry_type || g.entry_type === 'Anime'), true));
 }
 
 export async function calendar() {

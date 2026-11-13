@@ -2,19 +2,54 @@
 // мышью их можно зажать и потянуть вбок, по краям появляются стрелки.
 // Работает для всего, что дорисовывается позже: полосы находятся при наведении.
 const SCROLLERS = '.row, .hero-picker, .tabs, .set-nav, [data-hscroll]';
-const ARROW_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>';
-const ARROW_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
+const ARROW_L = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>';
+const ARROW_R = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
 
 const overflows = (el) => el.scrollWidth > el.clientWidth + 4;
 const scrollerAt = (t) => {
   if (!t || !t.closest) return null;
-  // На главной заголовок и карточки принадлежат одной секции. Поэтому колесо
-  // работает не только строго над самой полосой, но и над всей её секцией.
   const direct = t.closest(SCROLLERS);
   const section = !direct && t.closest('.section');
   const el = direct || (section && section.querySelector('.row'));
-  return el && overflows(el) && getComputedStyle(el).overflowX !== 'hidden' ? el : null;
+  return el && !el.hasAttribute('data-row-arrows') && overflows(el) && getComputedStyle(el).overflowX !== 'hidden' ? el : null;
 };
+
+export function mountRowArrows(el, hideButton) {
+  el.setAttribute('data-row-arrows', '');
+  const controls = document.createElement('div');
+  controls.className = 'row-arrows';
+  const button = (svg, direction, label) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = svg;
+    b.setAttribute('aria-label', label);
+    b.onclick = () => el.scrollBy({
+      left: direction * Math.max(200, el.clientWidth * 0.8),
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
+    return b;
+  };
+  const prev = button(ARROW_L, -1, 'Прокрутить ряд влево');
+  const next = button(ARROW_R, 1, 'Прокрутить ряд вправо');
+  controls.append(prev, next);
+  hideButton.before(controls);
+  const sync = () => {
+    const max = el.scrollWidth - el.clientWidth;
+    controls.hidden = max <= 4;
+    prev.disabled = el.scrollLeft <= 2;
+    next.disabled = el.scrollLeft >= max - 2;
+  };
+  const observer = new ResizeObserver(sync);
+  observer.observe(el);
+  el.addEventListener('scroll', sync, { passive: true });
+  sync();
+  return () => {
+    observer.disconnect();
+    el.removeEventListener('scroll', sync);
+    el.removeAttribute('data-row-arrows');
+    controls.remove();
+  };
+}
 
 function syncArrows(el) {
   const w = el._hs; if (!w) return;
@@ -40,9 +75,20 @@ function attach(el) {
   const place = () => {
     const hr = host.getBoundingClientRect(), er = el.getBoundingClientRect();
     const top = er.top - hr.top + er.height / 2;
+    const arrowSize = 40;
+    const edgeInset = 6;
+    const leftGutter = er.left - hr.left;
+    const rightGutter = hr.right - er.right;
+    const useHeroGutters = el.classList.contains('hero-picker');
     prev.style.top = next.style.top = top + 'px';
-    prev.style.left = (er.left - hr.left + 6) + 'px';
-    next.style.left = (er.right - hr.left - 6 - 40) + 'px';
+    // На широком экране у большого блока есть свободные боковые поля. Выносим
+    // стрелки туда, чтобы они не закрывали баннеры в полосе выбора тайтла.
+    prev.style.left = useHeroGutters && leftGutter >= arrowSize
+      ? ((leftGutter - arrowSize) / 2) + 'px'
+      : (er.left - hr.left + edgeInset) + 'px';
+    next.style.left = useHeroGutters && rightGutter >= arrowSize
+      ? (er.right - hr.left + (rightGutter - arrowSize) / 2) + 'px'
+      : (er.right - hr.left - edgeInset - arrowSize) + 'px';
   };
   el._hs.place = place;
   el.addEventListener('scroll', () => syncArrows(el), { passive: true });

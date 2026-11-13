@@ -5,6 +5,17 @@ import { loadBanners, bannerOf, posterHTML, bannerHTML, logosFor, logoCached } f
 import { freshTranslations, lib } from '../api365.js';
 import { FITS, ALIGNS, watchFit, pendingAttr, bannerLook } from '../fitart.js';
 import { animeCard, wideCard, section, row, statusLine } from '../components.js';
+import { animeFacts, nextEpisodeFact } from '../anime-facts.js';
+import { mountRowArrows } from '../hscroll.js';
+import { animateMotion, reducedMotion } from '../interface-motion.js';
+
+const RECENT_RELEASE_DAYS = 90;
+const DISCOVERY_ROWS = [
+  ['missedTv', 'Могли пропустить: Сериалы', 'tv', true],
+  ['missedMovies', 'Могли пропустить: Фильмы', 'movie', true],
+  ['catchUpTv', 'Наверстать Сериалы', 'tv', false],
+  ['catchUpMovies', 'Наверстать Фильмы', 'movie', false],
+];
 
 export const HOME_ROWS = [
   ['continue', 'Продолжить просмотр'],
@@ -13,6 +24,7 @@ export const HOME_ROWS = [
   ['recs', 'Рекомендации для вас'],
   ['fresh', 'Свежие переводы на Anime365'],
   ['anons', 'Скоро выйдут'],
+  ...DISCOVERY_ROWS.map(([key, title]) => [key, title]),
 ];
 export const HERO_SOURCES = [
   ['ongoing', 'Сейчас на экранах', 'Популярные онгоинги сезона с Shikimori'],
@@ -21,9 +33,12 @@ export const HERO_SOURCES = [
   ['recs', 'Рекомендации для вас', 'Рекомендации по вашему списку. Нужен Shikimori'],
   ['fresh', 'Свежие переводы на Anime365', 'Последние добавленные переводы и серии'],
   ['anons', 'Скоро выйдут', 'Популярные анонсы с Shikimori'],
+  ...DISCOVERY_ROWS.map(([key, title, , recent]) => [key, title, recent
+    ? `Релизы за последние ${RECENT_RELEASE_DAYS} дней, которых нет в вашем списке`
+    : 'Вышедшие тайтлы с высоким рейтингом, которых нет в вашем списке']),
 ];
 // Какой ряд повторяет большой блок: при таком источнике хиро ряд не показываем
-export const HERO_DUP = { continue: 'continue', newEps: 'newEps', recs: 'recs', fresh: 'fresh', anons: 'anons' };
+export const HERO_DUP = Object.fromEntries(HERO_SOURCES.map(([key]) => [key, key]));
 export function homePrefs() {
   const p = store.get('home', {});
   const keys = HOME_ROWS.map(([key]) => key);
@@ -83,7 +98,7 @@ export const heroLook = () => ({
 let unwatchHero = () => {};
 function layoutHero() {
   unwatchHero();
-  const media = $('#hero .hero-media');
+  const media = $('#hero .hero-media:not(.hero-media-outgoing)');
   unwatchHero = watchFit(media, media && media.querySelector('img.hero-bn:not(.blur)'), heroLook);
 }
 
@@ -116,8 +131,13 @@ async function heroSourceItems(source) {
       ...options,
     };
   };
+  const discovery = DISCOVERY_ROWS.find(([key]) => key === source);
+  if (discovery) {
+    const [, title, kind, recent] = discovery;
+    return (await discoveryAnimes(kind, 8, recent)).map((anime) => item(anime, title));
+  }
   if (source === 'continue') {
-    const history = lib.history().slice(0, 8);
+    const history = lib.continueHistory().slice(0, 8);
     const animes = await getAnimesByIds(history.map((entry) => entry.aid));
     const byId = new Map(animes.map((anime) => [anime.id, anime]));
     return history.map((entry) => item(byId.get(entry.aid) || entry.anime,
@@ -157,7 +177,7 @@ async function heroSourceItems(source) {
   const list = await listAnimes({ status: source === 'anons' ? 'anons' : 'ongoing', order: 'popularity', limit: 8 });
   return list.map((anime) => source === 'anons'
     ? item(anime, 'Скоро выйдут', { href: `#anime-${anime.id}`, cta: 'Подробнее' })
-    : item(anime, anime.next ? `Сейчас на экранах, ${anime.aired + 1}-я серия ${untilText(anime.next)}` : 'Сейчас на экранах'));
+    : item(anime, 'Сейчас на экранах'));
 }
 
 /* ---------- хиро ---------- */
@@ -166,6 +186,30 @@ function heroTitle(a) {
   const logo = heroLook().logo ? logoCached(a.id) : null;
   if (!logo) return `<h1 class="hero-title"><span>${esc(a.title)}</span></h1>`;
   return `<h1 class="hero-title is-logo"><img class="hero-logo" src="${esc(imgSrc(logo))}" alt=""><span class="hero-name">${esc(a.title)}</span></h1>`;
+}
+function heroKickerHTML(kicker, a) {
+  const next = kicker === 'Сейчас на экранах' ? nextEpisodeFact(a) : null;
+  const label = `<span class="hero-kicker-label">${esc(kicker)}${next ? '.' : ''}</span>`;
+  if (!next) return label;
+  return `${label}<span class="hero-kicker-next">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="/title-info-icons.svg#next"/></svg>
+    ${next.episode}-я серия: ${esc(next.schedule)}
+  </span>`;
+}
+function heroMetaHTML(a) {
+  const english = a.name || a.english || '';
+  const facts = animeFacts(a, { yearOnly: true });
+  const byKey = new Map(facts.map((fact) => [fact.key, fact]));
+  const values = ['kind', 'year', 'score'].map((key) => byKey.get(key)).filter(Boolean);
+  const parts = [];
+  if (english) parts.push(`<span class="hero-meta-title">${esc(english)}</span>`);
+  for (const fact of values) {
+    parts.push(`<span class="hero-meta-item hero-meta-${fact.key} ${fact.iconTone || ''} ${fact.tone || ''}" title="${esc(fact.label)}">
+        <svg class="hero-meta-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="${fact.icon}"/></svg>
+        <span class="sr">${esc(fact.label)}: </span>${esc(fact.value)}
+      </span>`);
+  }
+  return parts.join('');
 }
 function fitTitle(el) {
   if (!el || el.classList.contains('is-logo')) return;
@@ -185,9 +229,11 @@ let heroIndex = -1;
 function drawHero(i) {
   const el = $('#hero');
   if (!el || !heroList[i]) return;
-  const { anime: a, kicker, href, cta } = heroList[i];
+  const entry = heroList[i];
+  const { anime: a, details, kicker, href, cta } = entry;
   const b = bannerOf(a.id);
   const r = rateOf(a.id);
+  const previous = heroIndex;
   heroIndex = i;
   el.classList.toggle('has-banner', !!b);
   const content = document.createElement('template');
@@ -195,10 +241,10 @@ function drawHero(i) {
     <div class="hero-media">${b ? `<img class="hero-bn${pendingAttr(heroLook())}" src="/img?u=${encodeURIComponent(b)}" alt="">` : (a.posterBig || a.poster) ? `<img class="hero-bn blur" src="/img?u=${encodeURIComponent(a.posterBig || a.poster)}" alt="">` : ''}</div>
     <div class="hero-inner hero-swap">
       <div class="hero-text">
-        <p class="hero-kicker">${esc(kicker)}</p>
+        <p class="hero-kicker">${heroKickerHTML(kicker, details || a)}</p>
         ${heroTitle(a)}
-        <p class="hero-sub">${esc([a.name !== a.title ? a.name : '', KIND[a.kind], a.year, a.score ? `оценка ${a.score.toFixed(2)}` : ''].filter(Boolean).join(' / '))}</p>
-        <p class="hero-desc" id="heroDesc">${esc(a.description || '')}</p>
+        <p class="hero-meta-line" id="heroMeta">${heroMetaHTML(details || a)}</p>
+        <p class="hero-desc" id="heroDesc">${esc(details?.description || a.description || '')}</p>
         <div class="hero-actions">
           <a class="btn primary" href="${href}">${ICON.play}${esc(cta)}</a>
           <a class="btn ghost" href="#anime-${a.id}">Подробнее</a>
@@ -212,8 +258,26 @@ function drawHero(i) {
   const picker = $('.hero-picker', el);
   if (picker) {
     // Меняем только большой баннер и текст. Лента сохраняет DOM, фокус и scrollLeft.
-    $('.hero-media', el).replaceWith(content.content.querySelector('.hero-media'));
-    $('.hero-inner', el).replaceWith(content.content.querySelector('.hero-inner'));
+    const incoming = content.content.querySelector('.hero-inner');
+    incoming.classList.remove('hero-swap');
+    $('.hero-inner', el).replaceWith(incoming);
+    if (i !== previous) {
+      $('.hero-media-outgoing', el)?.remove();
+      const outgoing = $('.hero-media', el);
+      const media = content.content.querySelector('.hero-media');
+      if (reducedMotion.matches) outgoing.replaceWith(media);
+      else {
+        outgoing.classList.add('hero-media-outgoing');
+        outgoing.before(media);
+        animateMotion(outgoing, [{ opacity: 1 }, { opacity: 0 }], 360, {
+          fill: 'both', done: () => outgoing.remove(),
+        });
+        animateMotion(incoming, [
+          { opacity: .25, translate: `${i > previous ? 16 : -16}px 0` },
+          { opacity: 1, translate: '0 0' },
+        ], 310);
+      }
+    }
     $$('[data-hero]', picker).forEach((button) => {
       button.setAttribute('aria-current', String(+button.dataset.hero === i));
     });
@@ -239,23 +303,59 @@ function drawHero(i) {
     try { await saveRate(a, { status: 'planned' }); toast('Добавлено в «Запланировано»'); drawHero(i); }
     catch (e) { toast(e.message); plan.disabled = false; }
   };
-  if (!a.description) getAnime(a.id).then((full) => {
-    a.description = full.description;
-    const d = $('#heroDesc', el);
-    if (el.isConnected && d && heroIndex === i && heroList[i]?.anime === a) d.textContent = full.description;
+  if (!details) getAnime(a.id).then((full) => {
+    entry.details = full;
+    if (!el.isConnected || heroIndex !== i || heroList[i] !== entry) return;
+    $('.hero-kicker', el).innerHTML = heroKickerHTML(kicker, full);
+    $('#heroMeta', el).innerHTML = heroMetaHTML(full);
+    $('#heroDesc', el).textContent = full.description;
   }).catch(() => {});
+}
+
+async function discoveryAnimes(kind, count, recent) {
+  const list = await loadRates();
+  if (!list) return [];
+  const inList = new Set(list.map(({ anime }) => anime.id));
+  const matches = [];
+  const seen = new Set();
+  const limit = 50;
+  const today = Date.parse(new Date().toISOString().slice(0, 10));
+  const cutoff = today - RECENT_RELEASE_DAYS * 86400000;
+  const releaseDate = (anime) => Date.parse(anime.releasedOn || anime.airedOn);
+  for (let page = 1; page <= 12 && (recent || matches.length < count); page++) {
+    const batch = await listAnimes({ kind, status: 'released', order: recent ? 'aired_on' : 'ranked', limit, page });
+    const fresh = batch.filter(({ id }) => !seen.has(id));
+    if (!fresh.length) break;
+    for (const anime of fresh) {
+      seen.add(anime.id);
+      if (anime.kind !== kind || anime.status !== 'released' || inList.has(anime.id)) continue;
+      if (recent) {
+        const date = releaseDate(anime);
+        if (!(date >= cutoff && date <= today)) continue;
+      }
+      matches.push(anime);
+    }
+    // Дата премьеры и дата завершения могут отличаться на несколько сезонов.
+    if (batch.length < limit) break;
+  }
+  if (recent) matches.sort((a, b) => b.score - a.score || releaseDate(b) - releaseDate(a));
+  return matches.slice(0, count);
 }
 
 /* ---------- ряды ---------- */
 const ROWS = {
+  ...Object.fromEntries(DISCOVERY_ROWS.map(([key, title, kind, recent]) => [key, async (_, full) => {
+    const list = await discoveryAnimes(kind, full ? 50 : 20, recent);
+    return list.length ? section(title, row(list.map((anime) => animeCard(anime, { meta: statusLine(anime) })))) : '';
+  }])),
   async continue(hero, full) {
-    const h = lib.history().slice(0, full ? 40 : 12);
+    const h = lib.continueHistory().slice(0, full ? 40 : 12);
     if (!h.length) return '';
     await loadBanners(h.map((x) => x.aid));
     return section('Продолжить просмотр', row(h.map((x) => {
       const p = lib.pct(x.eid);
       return wideCard(x.anime, { href: `#watch-${x.aid}-${x.eid}`, kicker: x.ep, sub: p ? `Просмотрено ${p}%` : relTime(new Date(x.at).toISOString()), progress: p, action: true });
-    }), true), '<a class="section-link" href="#library">История</a>');
+    }), true), '<a class="section-link" href="#library/history">История</a>');
   },
   async newEps(hero, full) {
     if (!loggedIn() && !store.get('shikiNick', '')) return '';
@@ -266,9 +366,8 @@ const ROWS = {
       href: `#cont-${r.anime.id}-${r.episodes}`,
       kicker: newText(r),
       sub: `Вы посмотрели ${r.episodes} из ${r.anime.episodes || '?'}`,
-      progress: r.anime.episodes ? Math.round(r.episodes / r.anime.episodes * 100) : null,
       action: true,
-    })), true), '<a class="section-link" href="#library">Весь список</a>');
+    })), true), '<a class="section-link" href="#library/watching">Весь список</a>', 'newEpisodesRow');
   },
   async ongoing(hero, full) {
     const shown = hero && hero.src === 'ongoing' ? new Set(hero.map((x) => x.anime.id)) : new Set();
@@ -289,10 +388,9 @@ const ROWS = {
     const cards = items.filter((x) => by.has(+x.mal)).map((x) => {
       const ep = x.tr.episode || {};
       return animeCard(by.get(+x.mal), {
-        href: x.tr.episodeId ? `#watch-${x.mal}-${x.tr.episodeId}` : `#anime-${x.mal}`,
         badge: ep.episodeInt ? `Серия ${ep.episodeInt}` : 'Новое',
         meta: [x.tr.authorsSummary, relTime(x.tr.addedDateTime || x.tr.activeDateTime)].filter(Boolean).join(', '),
-      }).replace('<a class="card"', `<a class="card" data-tr="${x.tr.id}"`);
+      });
     });
     return cards.length ? section('Свежие переводы на Anime365', row(cards)) : '';
   },
@@ -305,6 +403,7 @@ const ROWS = {
 // Vue владеет каркасом страницы, эти функции наполняют отдельные блоки.
 export function mountHome(host, prefs, refresh) {
   let active = true;
+  const rowCleanups = [];
   const isCurrent = () => active && alive() && view() === host;
   heroList = [];
 
@@ -326,13 +425,12 @@ export function mountHome(host, prefs, refresh) {
     // ряды, которые зависят от хиро, ждут его: дубль скрываем, из онгоингов убираем показанное наверху
     const needHero = dupRow(prefs) === k || k === 'ongoing';
     (needHero ? heroP : Promise.resolve(null)).then((hero) => {
-      if (hero && dupRow(prefs) === k && hero.src === prefs.hero) return '';
+      if (hero?.length && dupRow(prefs) === k && hero.src === prefs.hero) return '';
       return ROWS[k](hero);
     }).then((html) => {
       if (!isCurrent()) return;
       const box = $(`[data-row="${k}"]`, host); if (!box) return;
       box.innerHTML = html;
-      $$('[data-tr]', box).forEach((a) => a.addEventListener('click', () => { state.pendingTr = +a.dataset.tr; }));
       // «скрыть ряд» прямо на главной; вернуть — из сообщения или в настройках
       const head = $('.section-head', box);
       const mode = rowMode();
@@ -354,6 +452,8 @@ export function mountHome(host, prefs, refresh) {
       if (head) {
         const title = HOME_ROWS.find((x) => x[0] === k)[1];
         head.insertAdjacentHTML('beforeend', `<button class="row-hide" type="button" title="Скрыть ряд" aria-label="Скрыть ряд «${esc(title)}»">${EYE_OFF}</button>`);
+        const scroller = $('.row', box);
+        if (mode === 'scroll' && scroller) rowCleanups.push(mountRowArrows(scroller, $('.row-hide', head)));
         $('.row-hide', head).onclick = () => {
           setRowVisible(k, false);
           refresh();
@@ -368,7 +468,12 @@ export function mountHome(host, prefs, refresh) {
   }
   const onRates = () => { if (isCurrent()) { const cur = $('.hero-pick[aria-current="true"]', host); drawHero(cur ? +cur.dataset.hero : 0); } };
   window.addEventListener('yoru:rates', onRates);
-  const dispose = () => { active = false; window.removeEventListener('yoru:rates', onRates); unwatchHero(); };
+  const dispose = () => {
+    active = false;
+    rowCleanups.forEach((cleanup) => cleanup());
+    window.removeEventListener('yoru:rates', onRates);
+    unwatchHero();
+  };
   return dispose;
 }
 

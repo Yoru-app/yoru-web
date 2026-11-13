@@ -1,4 +1,5 @@
 <script setup>
+import BrowseSkeleton from './BrowseSkeleton.vue';
 import { vContentMotion } from './motion.js';
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { errorBlock, parseDate, store } from '../public/js/core.js';
@@ -72,11 +73,11 @@ onMounted(() => {
         <CardSize />
       </div>
     </div>
-    <div v-if="loading" class="loading"><span class="spin" aria-label="Загрузка"></span></div>
+    <div v-if="loading" class="section"><BrowseSkeleton /></div>
     <div v-else-if="error" v-html="errorBlock(error)" @click="(event) => event.target.closest('[data-retry-route]') && refresh()"></div>
     <template v-else-if="days.length">
       <section v-for="[date, day] in days" :key="date" class="section">
-        <div class="section-head"><h2 class="section-title">{{ dayName(date) }}</h2><span class="section-link">{{ day.length }}</span></div>
+        <div class="section-head schedule-day"><h2 class="section-title">{{ dayName(date) }}</h2><span class="schedule-count" :aria-label="`Тайтлов: ${day.length}`">{{ day.length }}</span></div>
         <div class="grid">
           <AnimeCard v-for="item in day" :key="item.anime.id" :anime="item.anime" :meta="episodeLabel(item)" />
         </div>

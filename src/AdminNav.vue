@@ -1,19 +1,33 @@
 <script setup>
 import { vActiveIndicator } from './motion.js';
-import { ref, watch } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
+import { animateMotion } from '../public/js/interface-motion.js';
 
 const props = defineProps({ sections: { type: Array, required: true } });
 const key = 'yoru.admSection';
 const current = ref('users');
+let animation;
 try {
   const saved = localStorage.getItem(key);
   if (props.sections.some((section) => section.id === saved)) current.value = saved;
 } catch { /* хранилище недоступно */ }
 
-watch(current, (id) => {
-  for (const section of props.sections) section.element.hidden = section.id !== id;
+watch(current, (id, previous) => {
+  animation?.cancel();
+  const index = props.sections.findIndex((section) => section.id === id);
+  const direction = index > props.sections.findIndex((section) => section.id === previous) ? 1 : -1;
+  for (const { id: sectionId, element } of props.sections) {
+    element.hidden = sectionId !== id;
+    if (!element.hidden && previous) {
+      animation = animateMotion(element, [
+        { opacity: .48, translate: `${direction * 9}px 0` },
+        { opacity: 1, translate: '0 0' },
+      ], 220);
+    }
+  }
   try { localStorage.setItem(key, id); } catch { /* хранилище недоступно */ }
 }, { immediate: true });
+onBeforeUnmount(() => animation?.cancel());
 
 const ADM_IC = {
   users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-4 2.8-7 6.5-7s6.5 3 6.5 7M16 5.5a3.5 3.5 0 0 1 0 7M17 14c2.7.5 4.5 2.8 4.5 6"/></svg>',
@@ -26,7 +40,7 @@ const ADM_IC = {
 </script>
 
 <template>
-  <nav v-active-indicator class="set-nav" aria-label="Разделы администрирования">
+  <nav v-active-indicator class="set-nav admin-nav" aria-label="Разделы администрирования">
     <button v-for="section in sections" :key="section.id" class="set-nav-a" type="button"
       :aria-current="section.id === current ? 'page' : undefined" @click="current = section.id">
       <span class="section-icon" v-html="ADM_IC[section.id]" aria-hidden="true"></span>

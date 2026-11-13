@@ -102,6 +102,12 @@ const saveUsers = () => saveLater('users.json', () => users);
 // Сессии: { [sid]: { uid, at, seen } }
 const sessions = readJson('sessions.json', {});
 const saveSessions = () => saveLater('sessions.json', () => sessions);
+// Токены телевизоров хранятся только в виде SHA-256. Секреты Shikimori/TMDB
+// устройству не выдаются: оно работает через серверный прокси.
+const devices = readJson('devices.json', {});
+const saveDevices = () => saveLater('devices.json', () => devices);
+const tvPairings = new Map();
+const tvPairStarts = new Map();
 // Правила сервера
 const DEFAULT_SETTINGS = {
   access: 'invite',          // 'invite' — только ники из списка; 'open' — любой аккаунт Shikimori
@@ -197,6 +203,20 @@ function currentUser(req) {
   if (!u || u.blocked || Date.now() - (s.seen || s.at) > SESSION_DAYS * 86400e3) { delete sessions[sid]; saveSessions(); return null; }
   if (Date.now() - (s.seen || 0) > 60e3) { s.seen = Date.now(); u.lastSeen = Date.now(); saveSessions(); saveUsers(); }
   req.sid = sid;
+  return u;
+}
+function deviceUser(req) {
+  const m = /^YoruDevice\s+(\S+)$/i.exec(req.headers.authorization || '');
+  if (!m) return null;
+  const hash = crypto.createHash('sha256').update(m[1]).digest('hex');
+  const d = devices[hash];
+  if (!d || d.revoked) return null;
+  const u = users[d.uid];
+  if (!u || u.blocked || !allowedToEnter(u)) return null;
+  req.device = d;
+  req.deviceHash = hash;
+  req.bearer = true;
+  if (Date.now() - (d.lastSeen || 0) > 60e3) { d.lastSeen = Date.now(); saveDevices(); }
   return u;
 }
 const allowedToEnter = (u) => settings.access === 'open'
@@ -395,7 +415,7 @@ const PUBLIC_REST = /^(calendar|genres|studios|animes\/\d+\/(similar|related|fra
 async function handleShiki(req, res, url) {
   const rest = url.pathname.slice('/shiki/'.length) + url.search;
   const method = req.method;
-  if (method !== 'GET' && !sameOriginWrite(req)) return sendJson(res, 403, { error: 'forbidden' });
+  if (method !== 'GET' && !req.device && !sameOriginWrite(req)) return sendJson(res, 403, { error: 'forbidden' });
   if (method !== 'GET' && !req.user.token) return sendJson(res, 401, { error: 'Войдите через Shikimori снова, чтобы менять список.' });
   const cacheable = method === 'GET' && PUBLIC_REST.test(rest);
   if (cacheable) { const c = cacheGet('r:' + rest); if (c) return send(res, c.status, c.text, c.type); }
@@ -423,6 +443,7 @@ async function handleGql(req, res) {
 /* ------------------------------------------------------------- страницы входа */
 const pendingStates = new Map();
 const redirectUri = (req) => (PUBLIC_URL ? `${PUBLIC_URL}/oauth/shikimori` : `http://${req.headers.host || `127.0.0.1:${PORT}`}/oauth/shikimori`);
+const publicBase = (req) => PUBLIC_URL || `${isHttps(req) ? 'https' : 'http'}://${req.headers.host || `127.0.0.1:${PORT}`}`;
 const HTML = 'text/html; charset=utf-8';
 // Иконки и превью ссылки (Telegram, VK, Discord): ссылку на Yoru открывают через страницу входа
 const HEAD_META = `<link rel="icon" type="image/svg+xml" href="/logo.svg"><link rel="icon" href="/favicon.ico" sizes="48x48">
@@ -436,23 +457,23 @@ const NO_STORE = { 'Cache-Control': 'no-store' };
 function page(title, body) {
   return `<!DOCTYPE html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title>${HEAD_META}
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#141020;color:#ece7f7;font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr);place-items:center;background:#141020;color:#ece7f7;font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px}
 main{width:min(440px,100%);display:flex;flex-direction:column;gap:16px}
-.logo{display:flex;align-items:center;gap:12px;font-weight:800;font-size:24px}.logo b{color:#f2b544;font-weight:inherit;margin-left:.08em}.mark{width:36px;height:auto;filter:drop-shadow(0 0 2px rgba(255,214,140,.85)) drop-shadow(0 0 8px rgba(242,181,68,.6)) drop-shadow(0 0 20px rgba(242,181,68,.3))}
+main:has(form){padding:clamp(18px,5vw,30px);border:1px solid #322a52;border-radius:16px;background:#1b1630}
+.logo{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;font-weight:800;font-size:24px}.logo b{color:#f2b544;font-weight:inherit;margin-left:.08em}.mark{width:36px;height:auto;filter:drop-shadow(0 0 2px rgba(255,214,140,.85)) drop-shadow(0 0 8px rgba(242,181,68,.6)) drop-shadow(0 0 20px rgba(242,181,68,.3))}
 .logo small{font-size:13px;font-weight:600;color:#a59cc2;border:1px solid #322a52;border-radius:999px;padding:2px 10px;margin-left:4px}
-h1{font-size:20px;margin:6px 0 0}p{margin:0;color:#a59cc2;font-size:15px}
+h1{font-size:clamp(1.25rem,5vw,1.6rem);line-height:1.25;margin:6px 0 0}p{margin:0;color:#a59cc2;font-size:15px}
 form{display:flex;flex-direction:column;gap:12px}
-.btn{display:flex;align-items:center;justify-content:center;gap:10px;height:50px;border:0;border-radius:999px;background:#f2b544;color:#2a1a00;font-weight:700;font-size:16px;text-decoration:none;cursor:pointer}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;padding:8px 14px;border:0;border-radius:999px;background:#f2b544;color:#2a1a00;font-weight:700;font-size:16px;text-decoration:none;cursor:pointer}
 .btn:hover{background:#ffc75e}
 label{display:flex;flex-direction:column;gap:6px;font-size:14px;color:#a59cc2}
-input{height:46px;border-radius:12px;border:1px solid #322a52;background:#1b1630;color:#ece7f7;padding:0 14px;font-size:16px}
-input:focus{outline:2px solid #f2b544;outline-offset:1px}
+input{min-width:0;height:46px;border-radius:10px;border:1px solid #4c4268;background:#141020;color:#ece7f7;padding:0 14px;font-size:16px}
+:focus-visible{outline:2px solid #f2b544;outline-offset:3px}
 .err{color:#ec7f9d;font-size:14px;border:1px solid rgba(236,127,157,.4);border-radius:12px;padding:10px 14px}
-.note{font-size:13px;color:#6f6690}code{background:#1b1630;border:1px solid #322a52;border-radius:6px;padding:2px 6px;font-size:13px;word-break:break-all;color:#ece7f7}
+.note{font-size:13px;color:#a59cc2}code{background:#141020;border:1px solid #322a52;border-radius:6px;padding:2px 6px;font-size:13px;overflow-wrap:anywhere;color:#ece7f7}
 a{color:#f2b544}
 </style><body><main>${body}</main></body></html>`;
 }
-const LOGO = '<div class="logo"><img class="mark" src="/logo.svg" alt="">Yoru</div>';
 const MESSAGES = {
   denied: 'Этого аккаунта Shikimori нет в списке доступа. Попросите администратора Yoru добавить ваш ник, затем войдите снова.',
   blocked: 'Доступ для этого аккаунта закрыт администратором.',
@@ -460,16 +481,315 @@ const MESSAGES = {
   stale: 'Ссылка входа устарела, попробуйте ещё раз.',
   token: 'Shikimori не выдал доступ. Администратору стоит проверить Client Secret и адрес возврата приложения.',
 };
-function loginPage(req, url) {
-  if (!app) {
-    return page('Yoru — вход', `${LOGO}<h1>Сервер ещё не настроен</h1>
-      <p>Администратору нужно открыть <code>/admin_panel</code> и указать приложение Shikimori. После этого здесь появится кнопка входа.</p>`);
-  }
-  const msg = MESSAGES[url.searchParams.get('e')] || '';
-  return page('Yoru — вход', `${LOGO}<h1>Вход</h1><p>Yoru работает с вашим аккаунтом Shikimori: список, оценки и отметки серий — ваши.</p>
-    ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
-    <a class="btn" href="/auth/shikimori/login">Войти через Shikimori</a>
-    <p class="note">Видео — с вашим токеном Anime365, его можно указать после входа в настройках.</p>`);
+function loginPage(url) {
+  const error = url.searchParams.get('e');
+  const message = app && Object.hasOwn(MESSAGES, error) ? MESSAGES[error] : '';
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Yoru — вход</title>
+  ${HEAD_META}
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Onest:wght@400..800&display=swap');
+
+:root {
+  color-scheme: dark;
+  --night: #14101d;
+  --ink: #f5edf9;
+  --muted: #c1b4ce;
+  --gold: #f6ba55;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--night);
+  color: var(--ink);
+  font: 400 15px/1.55 "Onest", "Segoe UI", system-ui, sans-serif;
+}
+
+.login-scene {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  min-height: 100vh;
+  min-height: 100svh;
+  background:
+    radial-gradient(ellipse at 25% 37%, #f6ba5524, transparent 38%),
+    radial-gradient(ellipse at 58% 12%, #302047, transparent 72%),
+    linear-gradient(147deg, #241a38, var(--night) 76%);
+}
+.login-particles {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.login-hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(24px, 5vh, 56px);
+  min-width: 0;
+  padding: clamp(30px, 6vh, 80px) clamp(24px, 5vw, 80px);
+}
+.login-mascot {
+  display: block;
+  width: min(57%, 340px, 46vh);
+  height: auto;
+  margin: auto;
+  filter: drop-shadow(0 0 13px #f6ba5570) drop-shadow(0 0 48px #f6ba5542);
+  transition: filter .35s ease;
+  will-change: filter;
+}
+.login-mascot:hover { filter: drop-shadow(0 0 4px #fff0bd) drop-shadow(0 0 22px #f6ba55d9) drop-shadow(0 0 74px #f6ba5580); }
+.login-eyebrow {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+.login-copy .login-eyebrow::before { content: "•"; margin-right: 8px; }
+.login-copy h2, .login-access h1 {
+  color: var(--ink);
+  letter-spacing: -.055em;
+  line-height: 1.08;
+  font-weight: 800;
+}
+.login-copy h2 { margin: 13px 0 12px; font-size: clamp(36px, 5vw, 72px); }
+.login-word, .login-letter { display: inline-block; }
+.login-scene p { margin: 0; color: var(--muted); }
+.login-access {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: 44px clamp(24px, 4.7vw, 64px);
+  border-left: 1px solid #eacfff1a;
+  background: linear-gradient(105deg, #130f1cab, var(--night) 84%);
+}
+.login-access-inner { width: 100%; max-width: 390px; }
+.login-access h1 { margin: 8px 0 10px; font-size: clamp(30px, 4vw, 52px); }
+.login-access .login-error { margin-top: 14px; color: #ffa6ba; font-size: 14px; }
+.login-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  margin-top: 24px;
+  padding: 10px 16px;
+  border: 1px solid #ffd18a;
+  border-radius: 10px;
+  background: var(--gold);
+  color: #231708;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 6px 24px #f6ba551f;
+}
+.login-button:hover { background: #ffd080; }
+.login-button:active { background: #ecaa42; }
+.login-button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.login-access .login-services { margin-top: 21px; color: #aa9ab9; font-size: 12px; }
+.login-services span { margin-inline: 4px; }
+
+@media (max-width: 620px) {
+  .login-scene { grid-template-columns: minmax(0, 1fr); }
+  .login-hero { gap: 20px; padding: 26px 24px; }
+  .login-mascot { width: clamp(80px, 23vw, 128px); }
+  .login-copy h2 { font-size: clamp(31px, 7vw, 42px); }
+  .login-access { padding: 30px 24px 36px; border-left: 0; border-top: 1px solid #eacfff1a; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-mascot { transition: none; will-change: auto; }
+}
+  </style>
+</head>
+<body>
+  <main class="login-scene">
+    <canvas class="login-particles" aria-hidden="true"></canvas>
+    <section class="login-hero" aria-labelledby="login-headline">
+      <img class="login-mascot" src="/logo.svg" alt="" width="662" height="728">
+      <div class="login-copy">
+        <span class="login-eyebrow">Ваш вечер с Yoru</span>
+        <h2 id="login-headline" aria-label="Вечер. Ещё одна серия."><span>Вечер.</span><br><span>Ещё одна серия.</span></h2>
+        <p>Каталог, список и история просмотра в одном месте.</p>
+      </div>
+    </section>
+    <section class="login-access" aria-labelledby="login-title">
+      <div class="login-access-inner">
+        <span class="login-eyebrow">Подключение</span>
+        <h1 id="login-title">${app ? 'Войти в Yoru' : 'Сервер ещё не настроен'}</h1>
+        <p>${app
+          ? 'Войдите через Shikimori, чтобы открыть свой список и продолжить просмотр с того же места.'
+          : 'Укажите приложение Shikimori в панели администратора, чтобы открыть вход в Yoru.'}</p>
+        ${message ? `<p class="login-error" role="alert">${esc(message)}</p>` : ''}
+        <a class="login-button" href="${app ? '/auth/shikimori/login' + (url.searchParams.get('next') ? '?next=' + encodeURIComponent(url.searchParams.get('next')) : '') : '/admin_panel'}">
+          <span>${app ? 'Войти через Shikimori' : 'Панель администратора'}</span>
+          <span aria-hidden="true">→</span>
+        </a>
+        <p class="login-services">Shikimori <span>·</span> Anime365 <span>·</span> Yoru Sync</p>
+      </div>
+    </section>
+  </main>
+  <script>
+  (() => {
+    const scene = document.querySelector('.login-scene');
+    const canvas = document.querySelector('.login-particles');
+    const mascot = document.querySelector('.login-mascot');
+    const context = canvas.getContext('2d', { alpha: true });
+    if (!context) return;
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    const headline = document.querySelector('#login-headline');
+    const letters = [];
+    for (const line of headline.querySelectorAll('span')) {
+      const words = line.textContent.split(' ');
+      line.setAttribute('aria-hidden', 'true');
+      line.replaceChildren();
+      words.forEach((word, index) => {
+        if (index) line.append(' ');
+        const group = document.createElement('span');
+        group.className = 'login-word';
+        for (const char of word) {
+          const letter = document.createElement('span');
+          letter.className = 'login-letter';
+          letter.textContent = char;
+          group.append(letter);
+          letters.push(letter);
+        }
+        line.append(group);
+      });
+    }
+    let width = 0, height = 0, points = [], frame = 0;
+    let targetX = .7, targetY = .45, mouseX = .7, mouseY = .45, lastPointer = -Infinity;
+    let pointerX = -Infinity, pointerY = -Infinity;
+    let mascotHover = false, mascotMix = 0, mascotX = 0, mascotY = 0;
+    let mascotRadiusX = 1, mascotRadiusY = 1;
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const drawHeadline = (time, animate) => {
+      const rects = animate ? letters.map((letter) => letter.getBoundingClientRect()) : [];
+      letters.forEach((letter, index) => {
+        if (!animate) {
+          letter.style.fontWeight = '';
+          letter.style.transform = '';
+          return;
+        }
+        const rect = rects[index];
+        const distance = Math.hypot(rect.left + rect.width / 2 - pointerX, rect.top + rect.height / 2 - pointerY);
+        const reach = Math.max(170, rect.height * 1.5);
+        const near = Math.exp(-((distance / reach) ** 2));
+        const wave = .5 + .5 * Math.sin(time * .0014 - index * .6);
+        letter.style.fontWeight = Math.round(clamp(420 + 130 * wave + 260 * near, 400, 800));
+        letter.style.transform = 'scaleX(' + ((80 + 6 * wave + 14 * near) / 100) + ')';
+      });
+    };
+    const updateMascotCenter = () => {
+      const sceneRect = scene.getBoundingClientRect();
+      const mascotRect = mascot.getBoundingClientRect();
+      mascotX = mascotRect.left - sceneRect.left + mascotRect.width / 2;
+      mascotY = mascotRect.top - sceneRect.top + mascotRect.height / 2;
+      mascotRadiusX = Math.max(1, mascotRect.width / 2);
+      mascotRadiusY = Math.max(1, mascotRect.height / 2);
+    };
+    const resize = () => {
+      cancelAnimationFrame(frame);
+      const rect = scene.getBoundingClientRect();
+      const ratio = Math.min(devicePixelRatio || 1, 1.75);
+      width = rect.width;
+      height = rect.height;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const spacing = width < 640 ? 24 : 30;
+      points = [];
+      for (let y = 0; y < height + spacing; y += spacing) {
+        for (let x = 0; x < width + spacing; x += spacing) {
+          points.push({ x, y, offsetX: 0, offsetY: 0 });
+        }
+      }
+      updateMascotCenter();
+      draw(performance.now());
+    };
+    const draw = (time) => {
+      context.clearRect(0, 0, width, height);
+      const animate = !reduced.matches;
+      if (animate) {
+        if (time - lastPointer > 2200) {
+          targetX = .5 + .34 * Math.sin(time * .00031);
+          targetY = .5 + .3 * Math.cos(time * .00023);
+        }
+        mouseX += (targetX - mouseX) * .07;
+        mouseY += (targetY - mouseY) * .07;
+        mascotMix += ((mascotHover ? 1 : 0) - mascotMix) * .2;
+      }
+      const centerX = mouseX * width * (1 - mascotMix) + mascotX * mascotMix;
+      const centerY = mouseY * height * (1 - mascotMix) + mascotY * mascotMix;
+      const range = clamp(width * .22, 110, 210);
+      const rangeX = range + mascotRadiusX * mascotMix;
+      const rangeY = range + mascotRadiusY * mascotMix;
+      const push = 34 + Math.max(mascotRadiusX, mascotRadiusY) * .55 * mascotMix;
+      for (const point of points) {
+        const dx = point.x - centerX, dy = point.y - centerY;
+        const distance = Math.hypot(dx, dy) || 1;
+        const falloff = Math.hypot(dx / rangeX, dy / rangeY);
+        const influence = animate && falloff < 1 ? (1 - falloff) ** 1.6 : 0;
+        // Threshold: each dot eases toward a position pushed away from the pointer.
+        point.offsetX = animate ? point.offsetX + (dx / distance * influence * push - point.offsetX) * .16 : 0;
+        point.offsetY = animate ? point.offsetY + (dy / distance * influence * push - point.offsetY) * .16 : 0;
+        const x = point.x + point.offsetX, y = point.y + point.offsetY;
+        if (animate && mascotHover && Math.hypot((x - mascotX) / mascotRadiusX, (y - mascotY) / mascotRadiusY) < 1) continue;
+        const radius = 1.2 + influence * 3.6;
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        const gold = mascotHover ? 1 : mascotMix;
+        context.fillStyle = influence > .02 && gold > .001
+          ? 'rgb(' + Math.round(224 + 22 * gold) + ',' + Math.round(199 - 13 * gold) + ',' + Math.round(249 - 164 * gold) + ')'
+          : '#e0c7f9';
+        context.globalAlpha = influence > .02 ? .35 + .65 * influence : .28;
+        context.fill();
+      }
+      context.globalAlpha = 1;
+      drawHeadline(time, animate);
+      if (animate) frame = requestAnimationFrame(draw);
+    };
+    scene.addEventListener('pointermove', (event) => {
+      if (event.pointerType === 'touch') return;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      if (mascotHover) return;
+      const rect = scene.getBoundingClientRect();
+      targetX = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+      targetY = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+      lastPointer = performance.now();
+    }, { passive: true });
+    scene.addEventListener('pointerleave', () => { pointerX = pointerY = -Infinity; });
+    mascot.addEventListener('pointerenter', (event) => {
+      if (event.pointerType === 'touch') return;
+      mascotHover = true;
+      updateMascotCenter();
+    });
+    mascot.addEventListener('pointerleave', () => { mascotHover = false; });
+    reduced.addEventListener('change', () => {
+      cancelAnimationFrame(frame);
+      mascotMix = 0;
+      draw(performance.now());
+    });
+    new ResizeObserver(resize).observe(scene);
+  })();
+  </script>
+</body>
+</html>`;
 }
 
 async function handleOAuth(req, res, url) {
@@ -477,7 +797,8 @@ async function handleOAuth(req, res, url) {
     if (!app) return redirect(res, '/login');
     const state = crypto.randomBytes(16).toString('hex');
     const ru = redirectUri(req);
-    pendingStates.set(state, { ru, at: Date.now() });
+    const next = String(url.searchParams.get('next') || '/');
+    pendingStates.set(state, { ru, at: Date.now(), next: next.startsWith('/') && !next.startsWith('//') ? next : '/' });
     for (const [k, v] of pendingStates) if (Date.now() - v.at > 15 * 60e3) pendingStates.delete(k);
     const scope = ['user_rates', ...((app.scopes || []).includes('messages') ? ['messages'] : [])].join(' ');
     const q = new URLSearchParams({ client_id: app.client_id, redirect_uri: ru, response_type: 'code', scope, state });
@@ -516,8 +837,63 @@ async function handleOAuth(req, res, url) {
   const sid = crypto.randomBytes(32).toString('hex');
   sessions[sid] = { uid: id, at: Date.now(), seen: Date.now(), ua: String(req.headers['user-agent'] || '').slice(0, 120) };
   saveSessions();
-  res.writeHead(303, { Location: '/', 'Set-Cookie': cookie(req, 'yoru_v3_s', sid, SESSION_DAYS * 86400), ...NO_STORE });
+  res.writeHead(303, { Location: st.next || '/', 'Set-Cookie': cookie(req, 'yoru_v3_s', sid, SESSION_DAYS * 86400), ...NO_STORE });
   res.end();
+}
+
+function cleanPairings() {
+  const now = Date.now();
+  for (const [k, p] of tvPairings) if (p.expires <= now) tvPairings.delete(k);
+}
+async function handleTvPair(req, res, url) {
+  cleanPairings();
+  if (url.pathname === '/api/tv/pair/start' && req.method === 'POST') {
+    if (!app) return sendJson(res, 503, { error: 'Приложение Shikimori не настроено на сервере' });
+    const ip = clientIp(req), now = Date.now();
+    const starts = (tvPairStarts.get(ip) || []).filter((at) => now - at < 60e3);
+    if (starts.length >= 10) return sendJson(res, 429, { error: 'Слишком много попыток подключения. Подождите минуту.' });
+    starts.push(now); tvPairStarts.set(ip, starts);
+    if (tvPairings.size >= 200) tvPairings.delete(tvPairings.keys().next().value);
+    const deviceCode = crypto.randomBytes(32).toString('base64url');
+    const userCode = crypto.randomBytes(5).toString('hex').toUpperCase();
+    let name = 'Yoru TV';
+    try { name = cleanStr(JSON.parse(await readBody(req, 4096) || '{}').name, 80) || name; } catch { /* default */ }
+    const expires = Date.now() + 10 * 60e3;
+    tvPairings.set(deviceCode, { userCode, name, expires, status: 'pending' });
+    const path = `/tv/pair?code=${encodeURIComponent(userCode)}`;
+    return sendJson(res, 200, { deviceCode, userCode, verificationUriComplete: publicBase(req) + path, expiresIn: 600, interval: 2 });
+  }
+  if (url.pathname === '/api/tv/pair/status' && req.method === 'POST') {
+    let code = '';
+    try { code = String(JSON.parse(await readBody(req, 4096) || '{}').deviceCode || ''); } catch { /* invalid */ }
+    const p = tvPairings.get(code);
+    if (!p) return sendJson(res, 410, { status: 'expired' });
+    if (p.status !== 'approved') return sendJson(res, 200, { status: 'pending' });
+    tvPairings.delete(code);
+    return sendJson(res, 200, {
+      status: 'approved', deviceToken: p.deviceToken, user: p.user,
+      capabilities: { tmdb: !!tmdbKey() },
+    });
+  }
+  if (url.pathname === '/tv/pair' && req.method === 'GET') {
+    const code = String(url.searchParams.get('code') || '').toUpperCase();
+    const entry = [...tvPairings.entries()].find(([, p]) => p.userCode === code);
+    if (!entry) return send(res, 410, page('Подключение Yoru TV', '<h1>Код устарел</h1><p>Начните подключение на телевизоре заново.</p>'), HTML);
+    const [deviceCode, p] = entry;
+    const u = currentUser(req);
+    if (!u) return redirect(res, '/login?next=' + encodeURIComponent(`/tv/pair?code=${code}`));
+    if (!allowedToEnter(u)) return send(res, 403, page('Нет доступа', '<h1>Подключение запрещено</h1><p>Аккаунта нет в списке доступа сервера.</p>'), HTML);
+    if (p.status !== 'approved') {
+      const raw = crypto.randomBytes(32).toString('base64url');
+      const hash = crypto.createHash('sha256').update(raw).digest('hex');
+      devices[hash] = { uid: u.id, name: p.name, created: Date.now(), lastSeen: Date.now() };
+      saveDevices();
+      Object.assign(p, { status: 'approved', deviceToken: raw, user: { id: +u.id, nickname: u.nickname, avatar: u.avatar || '' } });
+      tvPairings.set(deviceCode, p);
+    }
+    return send(res, 200, page('Yoru TV подключён', `<div class="logo"><img class="mark" src="/logo.svg" alt="">Yoru <small>TV</small></div><h1>Телевизор подключён</h1><p>Можно закрыть эту страницу и вернуться к телевизору.</p>`), HTML);
+  }
+  return sendJson(res, 404, { error: 'not found' });
 }
 
 /* ---- вход по токену Shikimori (Yoru TV и другие клиенты без cookie) ---- */
@@ -1197,6 +1573,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (p === '/healthz') return send(res, 200, 'ok');
+    if (p === '/api/tv/pair/start' || p === '/api/tv/pair/status' || p === '/tv/pair') return await handleTvPair(req, res, url);
     // администрирование — свой вход, без аккаунта Shikimori
     if (p === '/admin_panel' || p.startsWith('/admin_panel/')) return await handleAdminPanel(req, res, url);
     if (p.startsWith('/admin/')) return await handleAdmin(req, res, url);
@@ -1206,12 +1583,17 @@ const server = http.createServer(async (req, res) => {
     if (/^\/(logo\.svg|favicon\.ico|manifest\.webmanifest|brand\/[\w-]+\.png|assets\/[\w-]+\.(?:js|css))$/.test(p) && (req.method === 'GET' || req.method === 'HEAD')) return handleStatic(req, res, url);
     // аватары в панели администратора
     if (p === '/img' && req.method === 'GET' && currentAdmin(req)) return await handleImg(req, res, url);
-    req.user = currentUser(req);
+    req.user = currentUser(req) || deviceUser(req);
     if (!req.user && (p.startsWith('/me/') || p === '/api/sync')) req.user = await userFromBearer(req);
     if (!req.user && p === '/api/sync') return sendJson(res, 401, { error: req.bearerError || (req.headers.authorization ? 'Токен не принят' : 'Нужен вход в Yoru'), module: 'yoru-sync' });
+    if (p === '/api/tv/device/revoke' && req.method === 'POST') {
+      if (!req.deviceHash) return sendJson(res, 401, { error: 'Нужен токен устройства' });
+      delete devices[req.deviceHash]; saveDevices();
+      return sendJson(res, 200, { ok: true });
+    }
     if (p === '/login') {
       if (req.user && req.user.token) return redirect(res, '/');
-      return send(res, 200, loginPage(req, url), HTML, NO_STORE);
+      return send(res, 200, loginPage(url), HTML, NO_STORE);
     }
     if (p === '/logout') {
       if (req.sid) { delete sessions[req.sid]; saveSessions(); }
